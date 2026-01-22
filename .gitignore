@@ -31,3 +31,27 @@ Thumbs.db
 *.rdb
 *.aof
 dump.rdb
+
+### Docker / Database Data ###
+# 도커 볼륨으로 생성되는 데이터 폴더 (데이터 보관용)
+mariadb_data/
+mysql_data/
+db_data/
+redis_data/
+
+### Application Logs ###
+# 애플리케이션 실행 중 생성되는 로그 파일
+*.log
+logs/
+
+### Backup / Temp ###
+# 임시 파일 및 백업
+*.swp
+*.bak
+*.tmp
+
+### Environment / Secrets ###
+# 보안이 중요한 설정 파일 (DB 비밀번호, API 키 등 포함 시)
+# 만약 application.properties에 보안 민감 정보가 있다면 팀원간 공유용 샘플만 남기고 제외하기도 합니다.
+# .env
+# application-local.properties
