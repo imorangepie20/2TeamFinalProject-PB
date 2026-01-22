@@ -1,18 +1,23 @@
 package com.springboot.finalprojcet.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
 
 @Service
-@RequiredArgsConstructor
+//@RequiredArgsConstructor
 public class RefreshTokenService {
 
     private final RedisTemplate<String, String> redisTemplate;
     private static final String KEY_PREFIX = "RT:";
     private static final long REFRESH_TOKEN_EXPIRATION = 60 * 60 * 24 * 7; // 7일
+
+    public RefreshTokenService(@Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     // refresh 토큰 저장
     public void saveRefreshToken(String email, String refreshToken) {
