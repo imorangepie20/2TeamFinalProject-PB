@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS playlists (
                                          user_id BIGINT NOT NULL COMMENT '사용자 ID',
                                          title VARCHAR(200) NOT NULL COMMENT '플레이리스트 제목',
     description TEXT COMMENT '플레이리스트 설명',
+    cover_image VARCHAR(500)  '커버 이미지 URL',
 
     -- 공간 타입: PMS(나의 공간), EMS(외부 공간), GMS(검증/Gateway 공간)
     space_type ENUM('PMS', 'EMS', 'GMS') NOT NULL DEFAULT 'EMS' COMMENT '공간 타입 (PMS, EMS, GMS)',
@@ -120,3 +121,5 @@ CREATE TABLE IF NOT EXISTS track_scored_id (
     FOREIGN KEY (track_id) REFERENCES tracks(track_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
     ) ENGINE=InnoDB COMMENT='사용자별 트랙 평가 점수';
+
+ALTER TABLE playlists ADD COLUMN cover_image VARCHAR(500) COMMENT '커버 이미지 URL';
