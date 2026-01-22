@@ -31,7 +31,3 @@ Thumbs.db
 *.rdb
 *.aof
 dump.rdb
-
-### Spring Boot Config ###
-application.properties
-application.yml
