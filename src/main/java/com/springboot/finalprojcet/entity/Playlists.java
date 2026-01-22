@@ -57,4 +57,7 @@ public class Playlists extends BaseEntity {
 
     @Column(name = "external_id")
     private String externalId;
+
+    @Column(name = "cover_image", length = 500)
+    private String coverImage;
 }
