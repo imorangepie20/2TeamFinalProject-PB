@@ -1,0 +1,37 @@
+### Java ###
+*.class
+*.jar
+*.war
+*.ear
+*.ctxt
+
+### Maven ###
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.utils_backup
+release.properties
+
+### Gradle ###
+.gradle/
+build/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Redis / Database ###
+*.rdb
+*.aof
+dump.rdb
+
+### Spring Boot Config ###
+application.properties
+application.yml

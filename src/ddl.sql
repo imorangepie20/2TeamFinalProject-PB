@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
                                      email VARCHAR(255) NOT NULL UNIQUE COMMENT '이메일 (로그인 ID)',
     password_hash VARCHAR(255) NOT NULL COMMENT '비밀번호 해시',
     nickname VARCHAR(100) NOT NULL COMMENT '사용자 닉네임',
+    role ENUM('USER', 'ADMIN') NOT NULL DEFAULT 'USER',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '가입일시',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시'
     ) ENGINE=InnoDB COMMENT='사용자 회원가입 및 로그인 정보';
