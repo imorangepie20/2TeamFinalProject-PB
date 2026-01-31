@@ -60,4 +60,7 @@ public class Playlists extends BaseEntity {
 
     @Column(name = "cover_image", length = 500)
     private String coverImage;
+
+    @Column(name = "ai_score", precision = 5, scale = 2)
+    private java.math.BigDecimal aiScore;
 }

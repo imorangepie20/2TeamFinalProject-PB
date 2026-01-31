@@ -32,7 +32,7 @@ public class UserPlatforms {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "platform_id", nullable = false)
-    private Long playlistId;
+    private Long platformId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
