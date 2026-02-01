@@ -42,6 +42,7 @@ public class PlaylistTracks {
     @JoinColumn(name = "track_id")
     private Tracks track;
 
+    @Builder.Default
     @Column(name = "order_index", nullable = false)
     private int orderIndex = 0;
 

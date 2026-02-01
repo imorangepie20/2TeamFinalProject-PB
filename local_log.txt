@@ -1,0 +1,92 @@
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :resolveMainClassName UP-TO-DATE
+
+> Task :bootRun
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.5.9)
+
+2026-02-01T08:17:28.009+09:00  INFO 66876 --- [musicspace-backend] [           main] c.s.f.FinalProjectApplication            : Starting FinalProjectApplication using Java 17.0.17 with PID 66876 (C:\Final_team_Project\2TeamFinalProject-BE\build\classes\java\main started by jowoo in C:\Final_team_Project\2TeamFinalProject-BE)
+2026-02-01T08:17:28.012+09:00 DEBUG 66876 --- [musicspace-backend] [           main] c.s.f.FinalProjectApplication            : Running with Spring Boot v3.5.9, Spring v6.2.15
+2026-02-01T08:17:28.013+09:00  INFO 66876 --- [musicspace-backend] [           main] c.s.f.FinalProjectApplication            : No active profile set, falling back to 1 default profile: "default"
+2026-02-01T08:17:29.645+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-02-01T08:17:29.648+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JDBC repositories in DEFAULT mode.
+2026-02-01T08:17:29.713+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.gms.repository.EmsPlaylistForRecommendRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.716+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.720+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.722+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.tidal.repository.TracksRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.725+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.MusicGenresRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.728+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.UserGenresRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.732+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data JDBC - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.UserRepository; If you want this repository to be a JDBC repository, consider annotating your entities with one of these annotations: org.springframework.data.relational.core.mapping.Table.
+2026-02-01T08:17:29.733+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 74 ms. Found 0 JDBC repository interfaces.
+2026-02-01T08:17:29.745+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-02-01T08:17:29.747+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-02-01T08:17:30.036+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 283 ms. Found 7 JPA repository interfaces.
+2026-02-01T08:17:30.055+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-02-01T08:17:30.056+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-02-01T08:17:30.100+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.gms.repository.EmsPlaylistForRecommendRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.100+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.100+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.100+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.tidal.repository.TracksRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.100+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.MusicGenresRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.101+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.UserGenresRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.101+09:00  INFO 66876 --- [musicspace-backend] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.springboot.finalprojcet.domain.user.repository.UserRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-02-01T08:17:30.101+09:00  INFO 66876 --- [musicspace-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 27 ms. Found 0 Redis repository interfaces.
+2026-02-01T08:17:30.273+09:00  WARN 66876 --- [musicspace-backend] [           main] o.m.s.mapper.ClassPathMapperScanner      : No MyBatis mapper was found in '[com.springboot.finalprojcet]' package. Please check your configuration.
+2026-02-01T08:17:31.112+09:00  INFO 66876 --- [musicspace-backend] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2026-02-01T08:17:31.127+09:00  INFO 66876 --- [musicspace-backend] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-02-01T08:17:31.127+09:00  INFO 66876 --- [musicspace-backend] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.50]
+2026-02-01T08:17:31.201+09:00  INFO 66876 --- [musicspace-backend] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-02-01T08:17:31.202+09:00  INFO 66876 --- [musicspace-backend] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 3140 ms
+2026-02-01T08:17:31.424+09:00  INFO 66876 --- [musicspace-backend] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-02-01T08:17:31.469+09:00  INFO 66876 --- [musicspace-backend] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.39.Final
+2026-02-01T08:17:31.504+09:00  INFO 66876 --- [musicspace-backend] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-02-01T08:17:31.801+09:00  INFO 66876 --- [musicspace-backend] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-02-01T08:17:31.838+09:00  INFO 66876 --- [musicspace-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-02-01T08:17:31.992+09:00  INFO 66876 --- [musicspace-backend] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.mariadb.jdbc.Connection@729a9c3d
+2026-02-01T08:17:31.995+09:00  INFO 66876 --- [musicspace-backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-02-01T08:17:32.048+09:00  WARN 66876 --- [musicspace-backend] [           main] org.hibernate.orm.deprecation            : HHH90000025: MariaDBDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-02-01T08:17:32.081+09:00  INFO 66876 --- [musicspace-backend] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 10.11.15
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-02-01T08:17:33.435+09:00  INFO 66876 --- [musicspace-backend] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-02-01T08:17:33.437+09:00  INFO 66876 --- [musicspace-backend] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-02-01T08:17:33.803+09:00 DEBUG 66876 --- [musicspace-backend] [           main] c.s.f.d.a.jwt.JwtAuthenticationFilter    : Filter 'jwtAuthenticationFilter' configured for use
+2026-02-01T08:17:34.266+09:00  INFO 66876 --- [musicspace-backend] [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-02-01T08:17:35.211+09:00  INFO 66876 --- [musicspace-backend] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 2 endpoints beneath base path '/actuator'
+2026-02-01T08:17:35.246+09:00  INFO 66876 --- [musicspace-backend] [           main] r$InitializeUserDetailsManagerConfigurer : Global AuthenticationManager configured with UserDetailsService bean with name costomUserDetailsService
+2026-02-01T08:17:36.016+09:00  INFO 66876 --- [musicspace-backend] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2026-02-01T08:17:36.035+09:00  INFO 66876 --- [musicspace-backend] [           main] c.s.f.FinalProjectApplication            : Started FinalProjectApplication in 8.536 seconds (process running for 8.934)
+2026-02-01T08:18:11.777+09:00  INFO 66876 --- [musicspace-backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-02-01T08:18:11.777+09:00  INFO 66876 --- [musicspace-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-02-01T08:18:11.780+09:00  INFO 66876 --- [musicspace-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 3 ms
+
+> Task :bootRun FAILED
+
+4 actionable tasks: 1 executed, 3 up-to-date
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':bootRun'.
+> Process 'command 'C:\Program Files\Microsoft\jdk-17.0.17.10-hotspot\bin\java.exe'' finished with non-zero exit value -1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 9m 31s

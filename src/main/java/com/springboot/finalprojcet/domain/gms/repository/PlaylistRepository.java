@@ -22,4 +22,6 @@ public interface PlaylistRepository extends JpaRepository<Playlists, Long> {
 
     @Query(value = "SELECT * FROM playlists WHERE user_id = :userId AND space_type = 'EMS' ORDER BY RAND() LIMIT :count", nativeQuery = true)
     List<Playlists> findRandomEmsByUserId(@Param("userId") Long userId, @Param("count") int count);
+
+    List<Playlists> findBySpaceType(SpaceType spaceType);
 }

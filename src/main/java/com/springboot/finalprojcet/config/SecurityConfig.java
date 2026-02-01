@@ -40,17 +40,58 @@ public class SecurityConfig {
                         // GMS API (FastAPI 콜백용)
                         .requestMatchers("/gms/**").permitAll()
                         .requestMatchers("/api/gms/**").permitAll()
+                        // Tidal API (전체 허용 - Tidal 자체 토큰으로 인증)
+                        .requestMatchers("/api/tidal/**").permitAll()
+                        .requestMatchers("/api/tidal/auth/device").permitAll()
+                        .requestMatchers("/api/tidal/auth/token").permitAll()
+                        .requestMatchers("/api/tidal/auth/token").permitAll()
+                        // Playlists
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/playlists").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/playlists/**").permitAll()
+                        // Stats
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/stats/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/stats/**").permitAll()
+                        // Genres & Analysis
+                        .requestMatchers("/api/genres/**").permitAll()
+                        .requestMatchers("/api/analysis/**").permitAll()
+                        .requestMatchers("/api/analysis/**").permitAll()
+                        // PMS & EMS
+                        // PMS & EMS
+                        .requestMatchers("/api/pms/**").permitAll()
+                        .requestMatchers("/api/ems/**").permitAll()
+                        // External (iTunes, Spotify)
+                        .requestMatchers("/api/itunes/**").permitAll()
+                        .requestMatchers("/api/spotify/**").permitAll()
+                        .requestMatchers("/api/youtube/**").permitAll()
+                        .requestMatchers("/api/youtube-music/**").permitAll()
+                        .requestMatchers("/api/training/**").permitAll()
+                        // auth.
+                        // auth.
+                        // Node.js
+                        // required
+                        // auth?
+                        // No,
+                        // typically
+                        // stats
+                        // are
+                        // public
+                        // or
+                        // implicit.
                         // Swagger UI
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/swagger-ui/**").permitAll()
+                        .requestMatchers("/api/swagger-ui.html").permitAll()
                         .requestMatchers("/swagger-resources/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/webjars/**").permitAll()
                         // Actuator
                         .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/api/actuator/**").permitAll()
+                        .requestMatchers("/").permitAll()
+                        .requestMatchers("/error").permitAll()
                         // 나머지는 인증 필요
-                        .anyRequest().authenticated()
-                );
+                        .anyRequest().authenticated());
 
         return http.build();
     }
@@ -58,14 +99,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:80",
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://127.0.0.1:80",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:5173"
-        ));
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

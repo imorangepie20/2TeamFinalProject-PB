@@ -37,7 +37,10 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
   servlet:
-    context-path: /api
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 # JWT Configuration
 jwt:
@@ -48,7 +51,7 @@ jwt:
 # Logging
 logging:
   level:
-    root: INFO
+    root: DEBUG
     com.springboot.finalprojcet: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
@@ -58,7 +61,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
-    path: /swagger-ui.html
+    path: /api/swagger-ui.html
     operations-sorter: alpha
     tags-sorter: alpha
 
@@ -66,8 +69,28 @@ springdoc:
 management:
   endpoints:
     web:
+      base-path: /api/actuator
       exposure:
         include: health,info
   endpoint:
     health:
       show-details: when_authorized
+
+# Tidal API Configuration
+tidal:
+  client-id: ${TIDAL_CLIENT_ID:}
+  client-secret: ${TIDAL_CLIENT_SECRET:}
+  auth-url: https://auth.tidal.com/v1/oauth2
+  api-url: https://api.tidal.com/v1
+  redirect-uri: ${TIDAL_REDIRECT_URI:http://localhost:5173/tidal-callback}
+
+# Spotify API Configuration
+spotify:
+  client-id: ${SPOTIFY_CLIENT_ID:}
+  client-secret: ${SPOTIFY_CLIENT_SECRET:}
+
+# YouTube API Configuration
+youtube:
+  key: ${YOUTUBE_KEY:}
+  client-id: ${YOUTUBE_CLIENT_ID:}
+  client-secret: ${YOUTUBE_CLIENT_SECRET:}

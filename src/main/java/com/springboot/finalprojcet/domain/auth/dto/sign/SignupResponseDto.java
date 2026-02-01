@@ -13,4 +13,6 @@ import lombok.Setter;
 @NoArgsConstructor
 public class SignupResponseDto {
     private String message;
+    private String token;
+    private Object user;
 }

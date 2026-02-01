@@ -1,5 +1,5 @@
 package com.springboot.finalprojcet.enums;
 
 public enum StatusFlag {
-    PTP,PRP,PFP
+    PTP, PRP, PFP, Active
 }

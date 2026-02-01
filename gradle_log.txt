@@ -1,0 +1,195 @@
+Initialized native services in: C:\Users\jowoo\.gradle\native
+Initialized jansi services in: C:\Users\jowoo\.gradle\native
+The client will now receive all logging from the daemon (pid: 21332). The daemon log file: C:\Users\jowoo\.gradle\daemon\8.14.3\daemon-21332.out.log
+Starting 4th build in daemon [uptime: 1 hrs 36 mins 26.916 secs, performance: 99%, GC rate: 0.00/s, heap usage: 0% of 512 MiB, non-heap usage: 19% of 384 MiB]
+Using 16 worker leases.
+Now considering [C:\Final_team_Project\2TeamFinalProject-BE] as hierarchies to watch
+Watching the file system is configured to be enabled if available
+File system watching is active
+Starting Build
+Settings evaluated using settings file 'C:\Final_team_Project\2TeamFinalProject-BE\settings.gradle'.
+Projects loaded. Root project using build file 'C:\Final_team_Project\2TeamFinalProject-BE\build.gradle'.
+Included projects: [root project 'finalprojcet']
+
+> Configure project :
+Evaluating root project 'finalprojcet' using build file 'C:\Final_team_Project\2TeamFinalProject-BE\build.gradle'.
+Resolved plugin [id: 'java']
+Resolved plugin [id: 'org.springframework.boot', version: '3.5.9']
+Resolved plugin [id: 'io.spring.dependency-management', version: '1.1.7']
+Applying dependency management to configuration 'annotationProcessor' in project 'finalprojcet'
+Applying dependency management to configuration 'apiElements' in project 'finalprojcet'
+Applying dependency management to configuration 'archives' in project 'finalprojcet'
+Applying dependency management to configuration 'bootArchives' in project 'finalprojcet'
+Applying dependency management to configuration 'compileClasspath' in project 'finalprojcet'
+Applying dependency management to configuration 'compileOnly' in project 'finalprojcet'
+Applying dependency management to configuration 'default' in project 'finalprojcet'
+Applying dependency management to configuration 'developmentOnly' in project 'finalprojcet'
+Applying dependency management to configuration 'implementation' in project 'finalprojcet'
+Applying dependency management to configuration 'mainSourceElements' in project 'finalprojcet'
+Applying dependency management to configuration 'productionRuntimeClasspath' in project 'finalprojcet'
+Applying dependency management to configuration 'runtimeClasspath' in project 'finalprojcet'
+Applying dependency management to configuration 'runtimeElements' in project 'finalprojcet'
+Applying dependency management to configuration 'runtimeOnly' in project 'finalprojcet'
+Applying dependency management to configuration 'testAndDevelopmentOnly' in project 'finalprojcet'
+Applying dependency management to configuration 'testAnnotationProcessor' in project 'finalprojcet'
+Applying dependency management to configuration 'testCompileClasspath' in project 'finalprojcet'
+Applying dependency management to configuration 'testCompileOnly' in project 'finalprojcet'
+Applying dependency management to configuration 'testImplementation' in project 'finalprojcet'
+Applying dependency management to configuration 'testResultsElementsForTest' in project 'finalprojcet'
+Applying dependency management to configuration 'testRuntimeClasspath' in project 'finalprojcet'
+Applying dependency management to configuration 'testRuntimeOnly' in project 'finalprojcet'
+All projects evaluated.
+Task name matched 'clean'
+Task name matched 'compileJava'
+Selected primary task 'clean' from project :
+Selected primary task 'compileJava' from project :
+Resolving global dependency management for project 'finalprojcet'
+Excluding []
+Excluding []
+Tasks to be executed: [task ':clean', task ':compileJava']
+Tasks that were excluded: []
+Resolve mutations for :clean (Thread[Execution worker,5,main]) started.
+:clean (Thread[Execution worker,5,main]) started.
+destroyer locations for task group 0 (Thread[Execution worker Thread 2,5,main]) started.
+
+> Task :clean
+Caching disabled for task ':clean' because:
+  Build cache is disabled
+Task ':clean' is not up-to-date because:
+  Task has not declared any outputs despite executing actions.
+Resolve mutations for :compileJava (Thread[included builds,5,main]) started.
+:compileJava (Thread[included builds,5,main]) started.
+
+> Task :compileJava
+Custom actions are attached to task ':compileJava'.
+Caching disabled for task ':compileJava' because:
+  Build cache is disabled
+Task ':compileJava' is not up-to-date because:
+  Task has failed previously.
+The input changes require a full rebuild for incremental task ':compileJava'.
+Compilation mode: in-process compilation
+Full recompilation is required because no incremental change information is available. This is usually caused by clean builds or changing compiler arguments.
+Compiling with toolchain 'C:\Program Files\Microsoft\jdk-17.0.17.10-hotspot'.
+Compiling with JDK Java compiler API.
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\entity\PlaylistTracks.java:46: warning: @Builder will ignore the initializing expression entirely. If you want the initializing expression to serve as default, add @Builder.Default. If it is not supposed to be settable during building, make the field final.
+    private int orderIndex = 0;
+                ^
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\analysis\service\impl\AnalysisServiceImpl.java:102: error: local variables referenced from a lambda expression must be final or effectively final
+                            .weight((double) e.getValue() / tracks.size())
+                                                            ^
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\ems\service\impl\EmsServiceImpl.java:298: error: incompatible types: inference variable T has incompatible bounds
+        }).collect(Collectors.toList());
+                  ^
+    equality constraints: Map<String,Object>
+    lower bounds: Map<String,INT#1>
+  where T is a type-variable:
+    T extends Object declared in method <T>toList()
+  where INT#1,INT#2 are intersection types:
+    INT#1 extends Object,Serializable,Comparable<? extends INT#2>,Constable,ConstantDesc
+    INT#2 extends Object,Serializable,Comparable<?>,Constable,ConstantDesc
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\pms\service\impl\PmsServiceImpl.java:121: error: incompatible types: inference variable T has incompatible bounds
+        }).collect(Collectors.toList());
+                  ^
+    equality constraints: Map<String,Object>
+    lower bounds: Map<String,INT#1>
+  where T is a type-variable:
+    T extends Object declared in method <T>toList()
+  where INT#1,INT#2 are intersection types:
+    INT#1 extends Object,Serializable,Comparable<? extends INT#2>,Constable,ConstantDesc
+    INT#2 extends Object,Serializable,Comparable<?>,Constable,ConstantDesc
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:407: error: incompatible types: long cannot be converted to Integer
+                track.setDuration(((Number) tMap.get("duration_ms")).longValue() / 1000);
+                                                                                 ^
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:472: error: method does not override or implement a method from a supertype
+    @Override
+    ^
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:486: error: method does not override or implement a method from a supertype
+    @Override
+    ^
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\training\service\impl\TrainingServiceImpl.java:257: error: cannot find symbol
+                Map<String, Object> features = spotifyService.getAudioFeatures(isrc);
+                                                             ^
+  symbol:   method getAudioFeatures(String)
+  location: variable spotifyService of type SpotifyService
+C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\youtube\service\impl\YoutubeServiceImpl.java:487: error: cannot find symbol
+        playlist.setStatusFlag(StatusFlag.Active); // Active
+                                         ^
+  symbol:   variable Active
+  location: class StatusFlag
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+8 errors
+1 warning
+
+> Task :compileJava FAILED
+
+[Incubating] Problems report is available at: file:///C:/Final_team_Project/2TeamFinalProject-BE/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\analysis\service\impl\AnalysisServiceImpl.java:102: error: local variables referenced from a lambda expression must be final or effectively final
+                              .weight((double) e.getValue() / tracks.size())
+                                                              ^
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\entity\PlaylistTracks.java:46: warning: @Builder will ignore the initializing expression entirely. If you want the initializing expression to serve as default, add @Builder.Default. If it is not supposed to be settable during building, make the field final.
+      private int orderIndex = 0;
+                  ^
+  Note: Recompile with -Xlint:deprecation for details.
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\ems\service\impl\EmsServiceImpl.java:298: error: incompatible types: inference variable T has incompatible bounds
+          }).collect(Collectors.toList());
+                    ^
+      equality constraints: Map<String,Object>
+      lower bounds: Map<String,INT#1>
+    where T is a type-variable:
+      T extends Object declared in method <T>toList()
+    where INT#1,INT#2 are intersection types:
+      INT#1 extends Object,Serializable,Comparable<? extends INT#2>,Constable,ConstantDesc
+      INT#2 extends Object,Serializable,Comparable<?>,Constable,ConstantDesc
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\pms\service\impl\PmsServiceImpl.java:121: error: incompatible types: inference variable T has incompatible bounds
+          }).collect(Collectors.toList());
+                    ^
+      equality constraints: Map<String,Object>
+      lower bounds: Map<String,INT#1>
+    where T is a type-variable:
+      T extends Object declared in method <T>toList()
+    where INT#1,INT#2 are intersection types:
+      INT#1 extends Object,Serializable,Comparable<? extends INT#2>,Constable,ConstantDesc
+      INT#2 extends Object,Serializable,Comparable<?>,Constable,ConstantDesc
+2 actionable tasks: 2 executed
+Watched directory hierarchies: [C:\Final_team_Project\2TeamFinalProject-BE]
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:407: error: incompatible types: long cannot be converted to Integer
+                  track.setDuration(((Number) tMap.get("duration_ms")).longValue() / 1000);
+                                                                                   ^
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\youtube\service\impl\YoutubeServiceImpl.java:487: error: cannot find symbol
+          playlist.setStatusFlag(StatusFlag.Active); // Active
+                                           ^
+    symbol:   variable Active
+    location: class StatusFlag
+  Note: Recompile with -Xlint:unchecked for details.
+  Note: Some input files use or override a deprecated API.
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:472: error: method does not override or implement a method from a supertype
+      @Override
+      ^
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\spotify\service\impl\SpotifyServiceImpl.java:486: error: method does not override or implement a method from a supertype
+      @Override
+      ^
+  Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+  Note: Some input files use unchecked or unsafe operations.
+  C:\Final_team_Project\2TeamFinalProject-BE\src\main\java\com\springboot\finalprojcet\domain\training\service\impl\TrainingServiceImpl.java:257: error: cannot find symbol
+                  Map<String, Object> features = spotifyService.getAudioFeatures(isrc);
+                                                               ^
+    symbol:   method getAudioFeatures(String)
+    location: variable spotifyService of type SpotifyService
+  8 errors
+  1 warning
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights.
+
+BUILD FAILED in 9s
