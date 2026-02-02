@@ -111,4 +111,16 @@ public class TidalController {
     public ResponseEntity<TidalFeaturedResponse> getFeatured() {
         return ResponseEntity.ok(tidalService.getFeatured());
     }
+
+    @GetMapping("/search")
+    @Operation(summary = "검색", description = "Tidal에서 트랙이나 플레이리스트를 검색합니다.")
+    public ResponseEntity<TidalSearchResponse> search(
+            @RequestParam String query,
+            @RequestParam(required = false, defaultValue = "TRACKS,PLAYLISTS") String type,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) String visitorId) {
+        // visitorId resolution logic similar to other endpoints if needed, or pass
+        // directly
+        return ResponseEntity.ok(tidalService.search(query, type, limit, null, visitorId));
+    }
 }

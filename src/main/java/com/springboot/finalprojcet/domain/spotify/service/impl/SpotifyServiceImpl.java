@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springboot.finalprojcet.domain.common.service.ImageService;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
 import com.springboot.finalprojcet.domain.spotify.service.SpotifyService;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
@@ -42,6 +43,7 @@ public class SpotifyServiceImpl implements SpotifyService {
     private final PlaylistRepository playlistRepository;
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
+    private final ImageService imageService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -295,6 +297,7 @@ public class SpotifyServiceImpl implements SpotifyService {
                     map.put("artist",
                             artists.stream().map(a -> (String) a.get("name")).collect(Collectors.joining(", ")));
                     map.put("album", album.get("name"));
+                    // We don't download here for simple listing, only on import unless requested
                     map.put("artwork", img);
                     map.put("duration", ((Number) t.get("duration_ms")).longValue() / 1000);
                     map.put("previewUrl", t.get("preview_url"));
@@ -379,6 +382,14 @@ public class SpotifyServiceImpl implements SpotifyService {
         playlist.setUser(userProxy);
         playlist.setTitle(title);
         playlist.setDescription(desc);
+        // Download cover image
+        if (cover != null && cover.startsWith("http")) {
+            try {
+                cover = imageService.downloadImage(cover, "playlists");
+            } catch (Exception e) {
+                log.warn("Failed to download Spotify playlist cover: {}", e.getMessage());
+            }
+        }
         playlist.setCoverImage(cover);
         playlist.setSourceType(SourceType.Platform); // or custom 'spotify' if enum supports? Node said 'spotify'. Enum
                                                      // has 'Platform'.
@@ -413,6 +424,27 @@ public class SpotifyServiceImpl implements SpotifyService {
                 // track.setSpotifyId(spotifyId); // If Entity has it.
                 // Assuming Entity has matching fields from prior analysis?
                 // `Tracks` entity had `externalMetadata`.
+                // Download track artwork
+                String trackImg = null;
+                List<Map> tImgs = (List<Map>) alb.get("images");
+                if (tImgs != null && !tImgs.isEmpty()) {
+                    trackImg = (String) tImgs.get(0).get("url");
+                    if (trackImg != null && trackImg.startsWith("http")) {
+                        try {
+                            trackImg = imageService.downloadImage(trackImg, "tracks");
+                        } catch (Exception e) {
+                            log.warn("Failed to download Spotify track artwork: {}", e.getMessage());
+                        }
+                    }
+                }
+                // track.setArtwork(trackImg); // Assuming Track entity has artwork field now?
+                // Wait, Track entity definition in previous context (Apple Music) showed
+                // .artwork().
+                // Let's check if Tracks entity has setArtwork.
+                // Based on PlaylistServiceImpl.java:216 .artwork(trackDto.getArtwork()) it
+                // does.
+                track.setArtwork(trackImg);
+
                 track.setExternalMetadata(objectMapper.writeValueAsString(meta)); // Storing ID here
 
                 // Save Track (Ideally check duplication)

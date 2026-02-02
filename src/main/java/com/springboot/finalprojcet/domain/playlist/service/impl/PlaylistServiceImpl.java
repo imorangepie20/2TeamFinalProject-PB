@@ -1,6 +1,7 @@
 package com.springboot.finalprojcet.domain.playlist.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springboot.finalprojcet.domain.common.service.ImageService;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
 import com.springboot.finalprojcet.domain.playlist.dto.PlaylistRequestDto;
 import com.springboot.finalprojcet.domain.playlist.dto.PlaylistResponseDto;
@@ -38,6 +39,7 @@ public class PlaylistServiceImpl implements PlaylistService {
     private final PlaylistTracksRepository playlistTracksRepository;
     private final TracksRepository tracksRepository;
     private final UserRepository userRepository;
+    private final ImageService imageService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -105,25 +107,10 @@ public class PlaylistServiceImpl implements PlaylistService {
                     .build();
         }).collect(Collectors.toList());
 
-        // We need to return tracks as well. The PlaylistResponseDto doesn't have tracks
-        // field yet.
-        // Wait, the Node.js API returns { ...playlist, tracks: [...] }.
-        // I should likely update PlaylistResponseDto or return a flexible map, OR
-        // create a PlaylistDetailDto.
-        // Ideally, PlaylistResponseDto should have 'tracks' field, generally null for
-        // list view, populated for detail view.
-        // Or I can add it to the DTO now.
-        // * Correction: I will add `private List<TrackResponseDto> tracks;` to
-        // PlaylistResponseDto later or now.
-        // For now, I'll cheat and return the DTO, but I should probably fix the DTO.
-
-        // Let's proceed with creating a map extension or strict DTO. Strict DTO is
-        // better.
-        // I will return the basic DTO for now, but the Controller will likely need to
-        // wrap it or I'll update DTO.
+        // Populate tracks in DTO
+        dto.setTracks(trackDtos);
 
         return dto;
-        // NOTE: I missed the tracks list in DTO. I should add it.
     }
 
     @Override
@@ -145,8 +132,16 @@ public class PlaylistServiceImpl implements PlaylistService {
 
         Playlists saved = playlistRepository.save(playlist);
 
-        // Image download logic usually goes here (async).
-        // For Spring, we can use @Async service or just simple thread for MVP.
+        // Download and save image locally
+        if (request.getCoverImage() != null && request.getCoverImage().startsWith("http")) {
+            try {
+                String localPath = imageService.downloadImage(request.getCoverImage(), "playlists");
+                saved.setCoverImage(localPath);
+                playlistRepository.save(saved);
+            } catch (Exception e) {
+                log.warn("Failed to download cover image: {}", e.getMessage());
+            }
+        }
 
         return convertToDto(saved);
     }
@@ -215,8 +210,20 @@ public class PlaylistServiceImpl implements PlaylistService {
                     .album(trackDto.getAlbum() != null ? trackDto.getAlbum() : "Unknown Album")
                     .duration(trackDto.getDuration() != null ? trackDto.getDuration() : 0)
                     .externalMetadata(objectMapper.writeValueAsString(metadata))
-                    .artwork(trackDto.getArtwork()) // Also populate artwork field
+                    .artwork(trackDto.getArtwork()) // Initial set
                     .build();
+
+            // Download artwork if exists
+            if (track.getArtwork() != null && track.getArtwork().startsWith("http")) {
+                try {
+                    String localPath = imageService.downloadImage(track.getArtwork(), "tracks");
+                    track.setArtwork(localPath);
+                    // Update metadata as well? Maybe not strictly necessary strictly referencing
+                    // column
+                } catch (Exception e) {
+                    log.warn("Failed to download track artwork: {}", e.getMessage());
+                }
+            }
 
             track = tracksRepository.save(track);
         } catch (Exception e) {
@@ -277,5 +284,58 @@ public class PlaylistServiceImpl implements PlaylistService {
                 .trackCount(trackCount)
                 .aiScore(p.getAiScore() != null ? p.getAiScore().doubleValue() : 0.0)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> importAlbum(Long userId, Map<String, Object> data) {
+        // 1. Create Playlist
+        PlaylistRequestDto req = PlaylistRequestDto.builder()
+                .title((String) data.get("title"))
+                .description("Imported Album")
+                .coverImage((String) data.get("coverImage"))
+                .sourceType(SourceType.Platform)
+                .spaceType(SpaceType.EMS)
+                .status(StatusFlag.PTP)
+                .build();
+
+        PlaylistResponseDto playlistDto = createPlaylist(userId, req);
+        Long playlistId = playlistDto.getId();
+
+        // 2. Add Tracks
+        List<Map<String, Object>> tracks = (List<Map<String, Object>>) data.get("tracks");
+        int count = 0;
+        if (tracks != null) {
+            for (Map<String, Object> t : tracks) {
+                try {
+                    // Extract duration safely
+                    Integer duration = 0;
+                    if (t.get("durationInMillis") != null) {
+                        duration = ((Number) t.get("durationInMillis")).intValue() / 1000;
+                    }
+
+                    TrackRequestDto tReq = TrackRequestDto.builder()
+                            .title((String) t.get("title"))
+                            .artist((String) t.get("artist"))
+                            .album((String) t.get("albumName")) // attributes.albumName
+                            .duration(duration)
+                            .artwork((String) data.get("coverImage")) // Use album cover for tracks if track-specific
+                                                                      // missing
+                            // .url(...) // preview?
+                            .build();
+
+                    // Helper mapping
+                    if (tReq.getAlbum() == null)
+                        tReq.setAlbum((String) data.get("title")); // Fallback to album title
+
+                    addTrackToPlaylist(playlistId, tReq);
+                    count++;
+                } catch (Exception e) {
+                    log.warn("Failed to adding track to imported album: {}", e.getMessage());
+                }
+            }
+        }
+
+        return Map.of("message", "Album imported successfully", "playlist", playlistDto, "count", count);
     }
 }

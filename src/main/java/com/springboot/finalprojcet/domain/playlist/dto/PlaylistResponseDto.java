@@ -29,4 +29,5 @@ public class PlaylistResponseDto {
     private LocalDateTime updatedAt;
     private Integer trackCount;
     private Double aiScore;
+    private java.util.List<TrackResponseDto> tracks;
 }

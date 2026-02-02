@@ -22,6 +22,8 @@ public interface PlaylistService {
 
     Map<String, Object> movePlaylist(Long id, SpaceType spaceType);
 
+    Map<String, Object> importAlbum(Long userId, Map<String, Object> data);
+
     void deletePlaylist(Long id);
 
     Map<String, Object> addTrackToPlaylist(Long id, TrackRequestDto track);

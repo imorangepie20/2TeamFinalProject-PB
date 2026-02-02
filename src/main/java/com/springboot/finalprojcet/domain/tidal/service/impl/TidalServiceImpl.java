@@ -772,4 +772,98 @@ public class TidalServiceImpl implements TidalService {
         // avoid crashes.
         return Map.of("items", Collections.emptyList(), "totalNumberOfItems", 0);
     }
+
+    @Override
+    public TidalSearchResponse search(String query, String type, int limit, String countryCode, String visitorId) {
+        VisitorToken vt = getValidToken(visitorId);
+        String token = (vt != null) ? vt.accessToken : null;
+
+        // If strict on user token, we might return empty if null.
+        // But for search, we might want to try Client Credentials if implemented,
+        // OR just require user login as per current design relying on visitorTokens.
+        if (token == null) {
+            // For now, return empty if no user token, or could implement Client Auth
+            // fallback
+            return TidalSearchResponse.builder().playlists(Collections.emptyList()).tracks(Collections.emptyList())
+                    .build();
+        }
+
+        if (countryCode == null) {
+            countryCode = (vt.countryCode != null) ? vt.countryCode : "US";
+        }
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.set("Accept", "application/vnd.tidal.v1+json");
+
+            String url = String.format("%s/search?query=%s&types=%s&limit=%d&countryCode=%s",
+                    tidalProperties.getApiUrl(),
+                    URLEncoder.encode(query, StandardCharsets.UTF_8),
+                    type != null ? type : "TRACKS,PLAYLISTS",
+                    limit,
+                    countryCode);
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+            JsonNode data = response.getBody();
+
+            List<TidalPlaylist> playlists = new ArrayList<>();
+            List<TidalTrack> tracks = new ArrayList<>();
+
+            if (data != null) {
+                // Parse Playlists
+                if (data.has("playlists")) {
+                    JsonNode playlistItems = data.path("playlists").path("items");
+                    playlistItems.forEach(p -> {
+                        String squareImage = p.path("squareImage").asText(null);
+                        String image = squareImage != null
+                                ? "https://resources.tidal.com/images/" + squareImage.replace("-", "/") + "/320x320.jpg"
+                                : null;
+
+                        playlists.add(TidalPlaylist.builder()
+                                .uuid(p.path("uuid").asText())
+                                .title(p.path("title").asText())
+                                .numberOfTracks(p.path("numberOfTracks").asInt())
+                                .image(image)
+                                .description(p.path("description").asText(null))
+                                .build());
+                    });
+                }
+
+                // Parse Tracks
+                if (data.has("tracks")) {
+                    JsonNode trackItems = data.path("tracks").path("items");
+                    trackItems.forEach(t -> {
+                        String albumCover = t.path("album").path("cover").asText(null);
+                        String artwork = albumCover != null
+                                ? "https://resources.tidal.com/images/" + albumCover.replace("-", "/") + "/320x320.jpg"
+                                : null;
+
+                        tracks.add(TidalTrack.builder()
+                                .id(t.path("id").asText())
+                                .title(t.path("title").asText())
+                                .artist(t.path("artist").path("name")
+                                        .asText(t.path("artists").path(0).path("name").asText("Unknown")))
+                                .album(t.path("album").path("title").asText("Unknown"))
+                                .duration(t.path("duration").asInt())
+                                .artwork(artwork)
+                                .isrc(t.path("isrc").asText(null))
+                                .allowStreaming(t.path("allowStreaming").asBoolean(true))
+                                .build());
+                    });
+                }
+            }
+
+            return TidalSearchResponse.builder()
+                    .playlists(playlists)
+                    .tracks(tracks)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("[Tidal] Search failed", e);
+            return TidalSearchResponse.builder().playlists(Collections.emptyList()).tracks(Collections.emptyList())
+                    .build();
+        }
+    }
 }

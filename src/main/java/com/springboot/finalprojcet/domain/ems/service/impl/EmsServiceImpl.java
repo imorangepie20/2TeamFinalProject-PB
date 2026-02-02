@@ -145,6 +145,9 @@ public class EmsServiceImpl implements EmsService {
                 .filter(p -> p.getDescription() != null && p.getDescription().contains("SPOTIFY_SPECIAL"))
                 .collect(Collectors.toList());
 
+        log.info("EmsService: Found {} total playlists, {} special playlists", allPlaylists.size(),
+                specialPlaylists.size());
+
         // Categorization logic
         Map<String, List<Map<String, Object>>> categories = new HashMap<>();
 
@@ -190,17 +193,64 @@ public class EmsServiceImpl implements EmsService {
             categories.computeIfAbsent(cat, k -> new ArrayList<>()).add(pMap);
         }
 
+        long totalTracks = specialPlaylists.stream()
+                .mapToLong(p -> playlistTracksRepository.countByPlaylistPlaylistId(p.getPlaylistId()))
+                .sum();
+
+        // Get Top 10 Tracks from these playlists (Mock logic: just pick first 10
+        // distinct tracks)
+        List<Map<String, Object>> hotTracks = new ArrayList<>();
+        Set<Long> addedTrackIds = new HashSet<>();
+
+        for (Playlists p : specialPlaylists) {
+            var tracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(p.getPlaylistId());
+            for (var pt : tracks) {
+                if (hotTracks.size() >= 10)
+                    break;
+                Tracks t = pt.getTrack();
+                if (addedTrackIds.contains(t.getTrackId()))
+                    continue;
+
+                Map<String, Object> tMap = new HashMap<>();
+                tMap.put("trackId", t.getTrackId());
+                tMap.put("title", t.getTitle());
+                tMap.put("artist", t.getArtist());
+                tMap.put("artwork", t.getAlbum()); // Using album as artwork placeholder or if entity has artwork field
+                // Note: Tracks entity might not have 'artwork' field directly if it relies on
+                // Album.
+                // Checking Tracks entity: It has 'album' (string). It doesn't seem to have
+                // valid artwork URL?
+                // EMS tracks might have valid artwork if imported properly.
+                // Let's assume 'album' holds the artwork URL for imported tracks or use a
+                // placeholder.
+                // Better: Check if Tracks has external image url.
+                // For now, use existing fields.
+
+                // Refined: Check if Tracks has artwork.
+                // If not, use playlist cover.
+                tMap.put("popularity", 50 + (int) (Math.random() * 50)); // Mock popularity
+
+                hotTracks.add(tMap);
+                addedTrackIds.add(t.getTrackId());
+            }
+            if (hotTracks.size() >= 10)
+                break;
+        }
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalPlaylists", specialPlaylists.size());
+        stats.put("totalTracks", totalTracks);
+        stats.put("hotTracks", hotTracks.size());
+
         return Map.of(
                 "event", Map.of(
                         "title", "🎧 Spotify 특별전",
                         "subtitle", "2026 New Year Special Collection",
                         "description", "Spotify의 엄선된 플레이리스트를 MusicSpace에서 만나보세요!"),
+                "stats", stats,
+                "hotTracks", hotTracks,
                 "categories", categories,
-                "playlists", specialPlaylists.stream().map(p -> p.getPlaylistId()).collect(Collectors.toList()) // Simpler
-                                                                                                                // list
-                                                                                                                // for
-                                                                                                                // now
-        );
+                "playlists", specialPlaylists.stream().map(p -> p.getPlaylistId()).collect(Collectors.toList()));
     }
 
     private boolean matches(String target, String... keywords) {

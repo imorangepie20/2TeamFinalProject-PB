@@ -5,6 +5,7 @@ import com.springboot.finalprojcet.domain.playlist.dto.PlaylistRequestDto;
 import com.springboot.finalprojcet.domain.playlist.dto.PlaylistResponseDto;
 import com.springboot.finalprojcet.domain.playlist.dto.TrackRequestDto;
 import com.springboot.finalprojcet.domain.playlist.service.PlaylistService;
+import com.springboot.finalprojcet.enums.SourceType;
 import com.springboot.finalprojcet.enums.SpaceType;
 import com.springboot.finalprojcet.enums.StatusFlag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -107,5 +108,36 @@ public class PlaylistController {
     public ResponseEntity<Map<String, Object>> seedPlaylists() {
         // 이미 DB에 데이터가 있으므로 성공 메시지만 반환
         return ResponseEntity.ok(Map.of("message", "Playlists seeded successfully", "imported", 0));
+    }
+
+    @PostMapping("/import")
+    @Operation(summary = "플레이리스트 가져오기", description = "플랫폼 플레이리스트를 가져옵니다.")
+    public ResponseEntity<PlaylistResponseDto> importPlaylist(
+            @RequestBody Map<String, Object> body,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+
+        // Map body to DTO
+        String title = (String) body.get("title");
+        String platformId = (String) body.get("platformPlaylistId");
+
+        PlaylistRequestDto req = PlaylistRequestDto.builder()
+                .title(title)
+                .description((String) body.get("description"))
+                .coverImage((String) body.get("coverImage"))
+                .externalId(platformId)
+                .sourceType(SourceType.Platform)
+                .spaceType(SpaceType.EMS) // Default
+                .status(StatusFlag.PTP) // Default
+                .build();
+
+        return ResponseEntity.ok(playlistService.createPlaylist(userDetails.getUser().getUserId(), req));
+    }
+
+    @PostMapping("/import-album")
+    @Operation(summary = "앨범을 플레이리스트로 가져오기", description = "앨범 정보를 플레이리스트로 생성하고 트랙을 추가합니다.")
+    public ResponseEntity<Map<String, Object>> importAlbum(
+            @RequestBody Map<String, Object> body,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(playlistService.importAlbum(userDetails.getUser().getUserId(), body));
     }
 }

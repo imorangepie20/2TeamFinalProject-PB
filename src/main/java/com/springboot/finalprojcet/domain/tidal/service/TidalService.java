@@ -24,4 +24,6 @@ public interface TidalService {
     TidalFeaturedResponse getFeatured();
 
     Object getPlaylistTracks(String id, String countryCode, int limit, int offset);
+
+    TidalSearchResponse search(String query, String type, int limit, String countryCode, String visitorId);
 }
