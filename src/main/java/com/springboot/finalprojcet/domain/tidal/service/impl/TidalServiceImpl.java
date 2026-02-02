@@ -741,4 +741,35 @@ public class TidalServiceImpl implements TidalService {
                 .featured(featuredGroups)
                 .build();
     }
+
+    @Override
+    public Object getPlaylistTracks(String id, String countryCode, int limit, int offset) {
+        // Mock data for the dummy Featured Playlist
+        if ("33b4d455-837b-40b9-8e50-2f9540c1e828".equals(id)) {
+            List<Map<String, Object>> items = new ArrayList<>();
+            items.add(Map.of("title", "Super Shy", "artist", Map.of("name", "NewJeans")));
+            items.add(Map.of("title", "Seven", "artist", Map.of("name", "Jung Kook")));
+            items.add(Map.of("title", "ETA", "artist", Map.of("name", "NewJeans")));
+            items.add(Map.of("title", "I AM", "artist", Map.of("name", "IVE")));
+            items.add(Map.of("title", "Fast Forward", "artist", Map.of("name", "Jeon Somi")));
+
+            return Map.of(
+                    "limit", limit,
+                    "offset", offset,
+                    "totalNumberOfItems", 5,
+                    "items", items);
+        }
+
+        // For real playlists, try to fetch if we have a valid token (requires visitorId
+        // context usually,
+        // but here we might lack it if this is a public call.
+        // Tidal API requires User Token for most playlist operations.
+        // If we don't have a token, return empty or error.
+
+        // Since this endpoint is public/proxied without specific visitorId param in the
+        // path usually,
+        // we might check if there's a default token or just return empty for now to
+        // avoid crashes.
+        return Map.of("items", Collections.emptyList(), "totalNumberOfItems", 0);
+    }
 }

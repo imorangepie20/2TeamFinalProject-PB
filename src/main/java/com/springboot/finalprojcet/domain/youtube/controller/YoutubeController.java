@@ -23,10 +23,9 @@ public class YoutubeController {
     @GetMapping("/youtube/search")
     @Operation(summary = "YouTube 검색", description = "YouTube에서 동영상을 검색합니다.")
     public ResponseEntity<Map<String, Object>> search(
-            @RequestParam String term,
+            @RequestParam("q") String term,
             @RequestParam(defaultValue = "1") int maxResults) {
-        // Node.js mapped 'q' or 'query' to 'term' (or vice versa). Keeping 'term' for
-        // consistency with other APIs.
+        // Frontend sends 'q' instead of 'term'
         return ResponseEntity.ok(youtubeService.searchVideo(term, maxResults));
     }
 

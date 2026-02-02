@@ -96,6 +96,16 @@ public class TidalController {
         return ResponseEntity.ok(tidalService.syncTidal(userDetails.getUser().getUserId(), request));
     }
 
+    @GetMapping("/playlists/{id}/items")
+    @Operation(summary = "플레이리스트 트랙 조회", description = "특정 플레이리스트의 트랙 목록을 조회합니다.")
+    public ResponseEntity<Object> getPlaylistTracks(
+            @PathVariable String id,
+            @RequestParam(required = false) String countryCode,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
+        return ResponseEntity.ok(tidalService.getPlaylistTracks(id, countryCode, limit, offset));
+    }
+
     @GetMapping("/featured")
     @Operation(summary = "추천 플레이리스트", description = "Tidal 추천 플레이리스트를 조회합니다.")
     public ResponseEntity<TidalFeaturedResponse> getFeatured() {

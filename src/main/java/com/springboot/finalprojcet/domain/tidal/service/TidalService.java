@@ -22,4 +22,6 @@ public interface TidalService {
     TidalTokenPollResponse pollToken(TidalTokenPollRequest request);
 
     TidalFeaturedResponse getFeatured();
+
+    Object getPlaylistTracks(String id, String countryCode, int limit, int offset);
 }
