@@ -58,7 +58,7 @@ public class TidalServiceImpl implements TidalService {
         }
 
         String redirectUri = resolveRedirectUri(origin);
-        // Use new OAuth2 scopes only (mixing old and new causes error 1002)
+        // New Developer Portal scopes (legacy r_usr/w_usr causes error 1002)
         String scopes = "user.read playlists.read playlists.write collection.read";
 
         String authUrl = String.format(
@@ -193,16 +193,18 @@ public class TidalServiceImpl implements TidalService {
             List<TidalPlaylistResponse.TidalPlaylistItem> items = new ArrayList<>();
 
             for (JsonNode p : playlists) {
-                String squareImage = p.path("squareImage").asText(null);
-                String image = squareImage != null
-                        ? "https://resources.tidal.com/images/" + squareImage.replace("-", "/") + "/320x320.jpg"
-                        : null;
+                String image = resolvePlaylistImage(p);
+                String uuid = p.path("uuid").asText();
+                int trackCount = p.path("numberOfTracks").asInt(
+                        p.path("trackCount").asInt(
+                                p.path("totalNumberOfItems").asInt(0)));
+                String title = p.path("title").asText(p.path("name").asText("Untitled"));
 
                 items.add(TidalPlaylistResponse.TidalPlaylistItem.builder()
-                        .uuid(p.path("uuid").asText())
-                        .title(p.path("title").asText())
-                        .numberOfTracks(p.path("numberOfTracks").asInt(0))
-                        .trackCount(p.path("numberOfTracks").asInt(0))
+                        .uuid(uuid)
+                        .title(title)
+                        .numberOfTracks(trackCount)
+                        .trackCount(trackCount)
                         .image(image)
                         .description(p.path("description").asText(null))
                         .build());
@@ -461,8 +463,6 @@ public class TidalServiceImpl implements TidalService {
             body.add("scope", "user.read playlists.read playlists.write collection.read");
 
             HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(body, headers);
-            // Tidal Auth Base URL usually ends with /oauth2 or similar.
-            // We assume tidalProperties.getAuthUrl() is "https://auth.tidal.com/v1/oauth2"
             String url = tidalProperties.getAuthUrl() + "/device_authorization";
 
             ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.POST, entity, JsonNode.class);
@@ -567,6 +567,13 @@ public class TidalServiceImpl implements TidalService {
     }
 
     private String resolveRedirectUri(String origin) {
+        if (origin != null && !origin.isEmpty()) {
+            // Force localhost without port to match Tidal Portal whitelist
+            if (origin.contains("localhost") || origin.contains("127.0.0.1")) {
+                origin = "http://localhost";
+            }
+            return origin + "/tidal-callback";
+        }
         return tidalProperties.getRedirectUri();
     }
 
@@ -580,6 +587,85 @@ public class TidalServiceImpl implements TidalService {
             return null;
         }
         return tokenInfo;
+    }
+
+    /**
+     * Resolve playlist image from various formats in Tidal API responses.
+     */
+    private String resolvePlaylistImage(JsonNode p) {
+        // 1. Check if squareImage is already a full URL
+        String squareImage = p.path("squareImage").asText(null);
+        if (squareImage != null && squareImage.startsWith("http")) {
+            return squareImage;
+        }
+
+        // 2. Check imageLinks array (v2 API format)
+        JsonNode imageLinks = p.path("imageLinks");
+        if (imageLinks.isArray() && imageLinks.size() > 0) {
+            for (JsonNode imgLink : imageLinks) {
+                String href = imgLink.path("href").asText(null);
+                if (href != null && href.startsWith("http")) {
+                    return href;
+                }
+            }
+        }
+
+        // 3. Check image field (might be full URL already)
+        String imageField = p.path("image").asText(null);
+        if (imageField != null && imageField.startsWith("http")) {
+            return imageField;
+        }
+
+        // 4. Convert squareImage ID to URL (v1 API format: UUID like "abc-def-123")
+        if (squareImage != null && !squareImage.isEmpty()) {
+            return "https://resources.tidal.com/images/" + squareImage.replace("-", "/") + "/320x320.jpg";
+        }
+
+        // 5. Check picture field
+        String picture = p.path("picture").asText(null);
+        if (picture != null && !picture.isEmpty()) {
+            if (picture.startsWith("http")) {
+                return picture;
+            }
+            return "https://resources.tidal.com/images/" + picture.replace("-", "/") + "/320x320.jpg";
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetch playlist cover art from Tidal v2 API
+     */
+    private String fetchPlaylistCoverArt(String playlistId, String token, String countryCode) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.set("Accept", "application/vnd.api+json");
+            headers.set("Client-Id", tidalProperties.getClientId());
+
+            String url = "https://openapi.tidal.com/v2/playlists/" + playlistId + "?countryCode=" + countryCode + "&include=coverArt";
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = response.getBody();
+                
+                // Check included array for coverArt
+                if (body.has("included") && body.path("included").isArray()) {
+                    for (JsonNode inc : body.path("included")) {
+                        if ("images".equals(inc.path("type").asText())) {
+                            String href = inc.path("attributes").path("href").asText(null);
+                            if (href != null && !href.isEmpty()) {
+                                return href;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[Tidal] Failed to fetch coverArt for {}: {}", playlistId, e.getMessage());
+        }
+        return null;
     }
 
     private TidalAuthStatusResponse.TidalUserInfo fetchSessionInfo(String accessToken) {
@@ -676,47 +762,41 @@ public class TidalServiceImpl implements TidalService {
                 return Collections.emptyList();
             }
 
-            // Try alternative APIs first (works with new OAuth2 scopes)
-            List<JsonNode> altResult = fetchPlaylistsViaAlternativeApis(token, tidalUserId, countryCode);
-            if (!altResult.isEmpty()) {
-                return altResult;
+            // 1) Primary: openapi.tidal.com v2 (works with new OAuth2 scopes)
+            List<JsonNode> v2Result = fetchPlaylistsViaV2(token, tidalUserId, countryCode);
+            if (!v2Result.isEmpty()) {
+                return v2Result;
             }
 
-            // Fallback to v1 API (requires r_usr scope - may fail with new OAuth2)
+            // 2) Fallback: v1 endpoints (may work if token has legacy scope access)
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(token);
             headers.set("Accept", "application/vnd.tidal.v1+json");
 
-            String[] endpoints = {
-                    "/users/" + tidalUserId + "/playlists",
-                    "/users/" + tidalUserId + "/favorites/playlists"
+            String[] v1Endpoints = {
+                    tidalProperties.getApiUrl() + "/users/" + tidalUserId + "/playlists?countryCode=" + countryCode + "&limit=50",
+                    "https://listen.tidal.com/v1/users/" + tidalUserId + "/playlists?countryCode=" + countryCode + "&limit=50"
             };
 
-            for (String endpoint : endpoints) {
+            for (String url : v1Endpoints) {
                 try {
-                    String url = tidalProperties.getApiUrl() + endpoint + "?countryCode=" + countryCode + "&limit=50";
                     log.info("[Tidal] Trying v1 endpoint: {}", url);
                     HttpEntity<Void> entity = new HttpEntity<>(headers);
-                    ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity,
-                            JsonNode.class);
+                    ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
 
                     if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                        JsonNode data = response.getBody();
-                        JsonNode items = data.has("items") ? data.path("items") : data.path("data");
+                        JsonNode items = response.getBody().path("items");
                         if (items.isArray() && items.size() > 0) {
-                            log.info("[Tidal] Found {} playlists via v1 {}", items.size(), endpoint);
+                            log.info("[Tidal] Found {} playlists via v1: {}", items.size(), url);
                             List<JsonNode> result = new ArrayList<>();
                             items.forEach(result::add);
                             return result;
-                        } else {
-                            log.info("[Tidal] v1 endpoint {} returned empty playlists", endpoint);
                         }
                     }
                 } catch (org.springframework.web.client.HttpClientErrorException e) {
-                    log.warn("[Tidal] v1 Endpoint {} returned {}: {}", endpoint, e.getStatusCode(),
-                            e.getResponseBodyAsString());
+                    log.warn("[Tidal] v1 {} returned {}", url, e.getStatusCode());
                 } catch (Exception e) {
-                    log.warn("[Tidal] v1 Endpoint {} failed: {}", endpoint, e.getMessage());
+                    log.warn("[Tidal] v1 {} failed: {}", url, e.getMessage());
                 }
             }
 
@@ -728,30 +808,19 @@ public class TidalServiceImpl implements TidalService {
     }
 
     /**
-     * Fetch playlists via multiple API approaches (try different endpoints)
-     * Updated for Tidal API v2 with proper headers and endpoint patterns
+     * Fetch playlists via Tidal OpenAPI v2
+     * Confirmed endpoint from tidal-sdk-web: GET /userCollections/{userId}/relationships/playlists
      */
-    private List<JsonNode> fetchPlaylistsViaAlternativeApis(String token, String tidalUserId, String countryCode) {
-        // Try multiple endpoint patterns - prioritize official OpenAPI v2 endpoints
+    private List<JsonNode> fetchPlaylistsViaV2(String token, String tidalUserId, String countryCode) {
         String[][] endpointConfigs = {
-                // {url, accept header, use client-id header}
-                // Official Tidal OpenAPI v2 endpoints
-                { "https://openapi.tidal.com/v2/me/playlists?countryCode=" + countryCode + "&limit=50",
-                        "application/vnd.api+json", "true" },
-                { "https://openapi.tidal.com/v2/playlists/me?countryCode=" + countryCode + "&limit=50",
-                        "application/vnd.api+json", "true" },
-                // Alternative API base URLs
-                { "https://api.tidal.com/v2/me/playlists?countryCode=" + countryCode + "&limit=50", "application/json",
-                        "true" },
-                { "https://api.tidal.com/v2/my-collection/playlists?countryCode=" + countryCode + "&limit=50",
-                        "application/json", "true" },
-                { "https://api.tidal.com/v2/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
-                        + "&limit=50", "application/json", "false" },
-                // Legacy v1 endpoints as fallback
-                { "https://listen.tidal.com/v1/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
-                        + "&limit=50", "application/vnd.tidal.v1+json", "false" },
-                { "https://api.tidalhifi.com/v1/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
-                        + "&limit=50", "application/vnd.tidal.v1+json", "false" },
+                // {url, accept header}
+                // Official OpenAPI v2: userCollections/{id}/relationships/playlists (confirmed from tidal-sdk-web)
+                // Include playlists.coverArt to get images in one request
+                { "https://openapi.tidal.com/v2/userCollections/" + tidalUserId + "/relationships/playlists?include=playlists,playlists.coverArt&countryCode=" + countryCode,
+                        "application/vnd.api+json" },
+                // GET /playlists with no filter returns user's own playlists
+                { "https://openapi.tidal.com/v2/playlists?countryCode=" + countryCode,
+                        "application/vnd.api+json" },
         };
 
         for (String[] config : endpointConfigs) {
@@ -760,68 +829,252 @@ public class TidalServiceImpl implements TidalService {
                 HttpHeaders reqHeaders = new HttpHeaders();
                 reqHeaders.setBearerAuth(token);
                 reqHeaders.set("Accept", config[1]);
+                reqHeaders.set("Client-Id", tidalProperties.getClientId());
 
-                // For OpenAPI v2, use Client-Id header instead of x-tidal-token
-                if ("true".equals(config[2])) {
-                    reqHeaders.set("Client-Id", tidalProperties.getClientId());
-                } else {
-                    reqHeaders.set("x-tidal-token", tidalProperties.getClientId());
-                }
-
-                log.info("[Tidal] Trying alternative endpoint: {}", url);
+                log.info("[Tidal] Trying v2 endpoint: {}", url);
                 HttpEntity<Void> entity = new HttpEntity<>(reqHeaders);
                 ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
 
                 if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                     JsonNode data = response.getBody();
-                    log.info("[Tidal] Alternative endpoint success: {} - Response keys: {}", url, data.fieldNames());
+                    log.info("[Tidal] v2 endpoint success: {} - keys: {}", url,
+                            data.fieldNames() != null ? data.toString().substring(0, Math.min(500, data.toString().length())) : "null");
 
-                    // Handle various response structures from Tidal API
-                    JsonNode items = null;
-
-                    // OpenAPI v2 uses JSON:API format with "data" array
-                    if (data.has("data") && data.path("data").isArray()) {
-                        items = data.path("data");
-                    } else if (data.has("items") && data.path("items").isArray()) {
-                        items = data.path("items");
-                    } else if (data.isArray()) {
-                        items = data;
-                    }
-
-                    if (items != null && items.size() > 0) {
-                        log.info("[Tidal] Found {} playlists via {}", items.size(), url);
-                        List<JsonNode> result = new ArrayList<>();
-
-                        for (JsonNode item : items) {
-                            // OpenAPI v2 JSON:API format has nested attributes
-                            if (item.has("attributes")) {
-                                // Merge id and attributes for compatibility
-                                ObjectNode merged = objectMapper.createObjectNode();
-                                merged.put("uuid", item.path("id").asText());
-                                JsonNode attrs = item.path("attributes");
-                                attrs.fieldNames().forEachRemaining(field -> merged.set(field, attrs.path(field)));
-                                result.add(merged);
-                            } else {
-                                result.add(item);
-                            }
-                        }
+                    List<JsonNode> result = parseV2PlaylistResponse(data);
+                    if (!result.isEmpty()) {
+                        log.info("[Tidal] Found {} playlists via v2: {}", result.size(), url);
                         return result;
-                    } else {
-                        log.info("[Tidal] Endpoint returned empty or no playlists: {}", url);
                     }
                 }
             } catch (org.springframework.web.client.HttpClientErrorException e) {
-                log.info("[Tidal] Alternative endpoint {} returned {}: {}", config[0], e.getStatusCode(),
-                        e.getMessage());
+                log.info("[Tidal] v2 {} returned {}: {}", config[0], e.getStatusCode(),
+                        e.getResponseBodyAsString().substring(0, Math.min(200, e.getResponseBodyAsString().length())));
             } catch (Exception e) {
-                log.debug("[Tidal] Alternative endpoint failed: {}", e.getMessage());
+                log.info("[Tidal] v2 {} failed: {}", config[0], e.getMessage());
             }
         }
 
         return Collections.emptyList();
     }
 
+    /**
+     * Parse various v2 playlist response formats into normalized playlist nodes.
+     */
+    private List<JsonNode> parseV2PlaylistResponse(JsonNode data) {
+        List<JsonNode> result = new ArrayList<>();
+
+        // Format 1: my-collection/playlists/folders response
+        // Contains "items" array with objects having "data" and "trn" (tidal resource name)
+        if (data.has("items") && data.path("items").isArray()) {
+            for (JsonNode item : data.path("items")) {
+                JsonNode playlist = extractPlaylistFromFolderItem(item);
+                if (playlist != null) {
+                    result.add(playlist);
+                }
+            }
+            if (!result.isEmpty()) return result;
+        }
+
+        // Format 2: JSON:API format with "data" array
+        if (data.has("data") && data.path("data").isArray()) {
+            // Build a map of included resources for reference resolution
+            Map<String, JsonNode> includedMap = new HashMap<>();
+            if (data.has("included") && data.path("included").isArray()) {
+                for (JsonNode inc : data.path("included")) {
+                    String type = inc.path("type").asText();
+                    String id = inc.path("id").asText();
+                    includedMap.put(type + ":" + id, inc);
+                }
+            }
+
+            for (JsonNode item : data.path("data")) {
+                ObjectNode merged = objectMapper.createObjectNode();
+                String itemId = item.path("id").asText();
+                merged.put("uuid", itemId);
+
+                if (item.has("attributes")) {
+                    JsonNode attrs = item.path("attributes");
+                    attrs.fieldNames().forEachRemaining(field -> merged.set(field, attrs.path(field)));
+                }
+
+                // Map "name" to "title" if needed
+                if (!merged.has("title") && merged.has("name")) {
+                    merged.put("title", merged.path("name").asText());
+                }
+
+                // Handle numberOfTracks from various sources
+                if (!merged.has("numberOfTracks") || merged.path("numberOfTracks").asInt(0) == 0) {
+                    JsonNode attrs = item.path("attributes");
+                    int trackCount = attrs.path("numberOfTracks").asInt(
+                            attrs.path("numberOfItems").asInt(
+                                    attrs.path("trackCount").asInt(
+                                            attrs.path("totalNumberOfItems").asInt(0))));
+                    merged.put("numberOfTracks", trackCount);
+                }
+
+                // Handle image from imageLinks or squareImage
+                if (!merged.has("squareImage") || merged.path("squareImage").isNull()) {
+                    JsonNode imageLinks = item.path("attributes").path("imageLinks");
+                    if (imageLinks.isArray() && imageLinks.size() > 0) {
+                        // Find square image or use first available
+                        for (JsonNode imgLink : imageLinks) {
+                            String meta = imgLink.path("meta").asText("");
+                            if (meta.contains("320x320") || meta.contains("square")) {
+                                merged.put("squareImage", imgLink.path("href").asText());
+                                break;
+                            }
+                        }
+                        if (!merged.has("squareImage") || merged.path("squareImage").asText("").isEmpty()) {
+                            merged.put("squareImage", imageLinks.path(0).path("href").asText());
+                        }
+                    }
+                }
+
+                // Try to resolve from included resources if playlist data is sparse
+                JsonNode includedPlaylist = includedMap.get("playlists:" + itemId);
+                if (includedPlaylist != null && includedPlaylist.has("attributes")) {
+                    JsonNode incAttrs = includedPlaylist.path("attributes");
+                    if (!merged.has("title") || merged.path("title").asText("").isEmpty()) {
+                        merged.put("title", incAttrs.path("name").asText(incAttrs.path("title").asText("")));
+                    }
+                    if (merged.path("numberOfTracks").asInt(0) == 0) {
+                        merged.put("numberOfTracks", incAttrs.path("numberOfTracks").asInt(
+                                incAttrs.path("numberOfItems").asInt(
+                                        incAttrs.path("totalNumberOfItems").asInt(0))));
+                    }
+                    if (!merged.has("squareImage") || merged.path("squareImage").asText("").isEmpty()) {
+                        JsonNode incImageLinks = incAttrs.path("imageLinks");
+                        if (incImageLinks.isArray() && incImageLinks.size() > 0) {
+                            merged.put("squareImage", incImageLinks.path(0).path("href").asText());
+                        }
+                    }
+                    if (!merged.has("description") || merged.path("description").asText("").isEmpty()) {
+                        merged.put("description", incAttrs.path("description").asText(""));
+                    }
+                    
+                    // Try to get coverArt from relationships
+                    if (!merged.has("squareImage") || merged.path("squareImage").asText("").isEmpty()) {
+                        JsonNode coverArtRel = includedPlaylist.path("relationships").path("coverArt").path("data");
+                        if (coverArtRel.has("id")) {
+                            String coverArtId = coverArtRel.path("id").asText();
+                            JsonNode coverArtImage = includedMap.get("images:" + coverArtId);
+                            if (coverArtImage != null) {
+                                String href = coverArtImage.path("attributes").path("href").asText("");
+                                if (!href.isEmpty()) {
+                                    merged.put("squareImage", href);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                result.add(merged);
+            }
+            if (!result.isEmpty()) return result;
+        }
+
+        // Format 3: Direct array
+        if (data.isArray()) {
+            data.forEach(result::add);
+        }
+
+        return result;
+    }
+
+    /**
+     * Extract playlist data from a folder item response.
+     * Folder items may contain nested playlist objects.
+     */
+    private JsonNode extractPlaylistFromFolderItem(JsonNode item) {
+        // Check if item itself is a playlist
+        if (item.has("uuid") && item.has("title")) {
+            return item;
+        }
+
+        // Folder item may have "data" containing the playlist
+        JsonNode itemData = item.path("data");
+        if (itemData.has("uuid") && itemData.has("title")) {
+            return itemData;
+        }
+
+        // Folder item may reference playlist in "playlist" field
+        JsonNode playlist = item.path("playlist");
+        if (playlist.has("uuid") && playlist.has("title")) {
+            return playlist;
+        }
+
+        // v2 folder items: check for trn (tidal resource name) like "trn:playlist:xxx"
+        String trn = item.path("trn").asText(null);
+        if (trn != null && trn.startsWith("trn:playlist:")) {
+            String uuid = trn.replace("trn:playlist:", "");
+            ObjectNode normalized = objectMapper.createObjectNode();
+            normalized.put("uuid", uuid);
+            normalized.put("title", item.path("name").asText(item.path("title").asText("Untitled")));
+            normalized.put("numberOfTracks", item.path("numberOfTracks").asInt(
+                    item.path("totalNumberOfItems").asInt(0)));
+
+            // Try to get image
+            String squareImage = item.path("squareImage").asText(null);
+            if (squareImage == null) {
+                squareImage = item.path("image").asText(null);
+            }
+            if (squareImage != null) {
+                normalized.put("squareImage", squareImage);
+            }
+
+            normalized.put("description", item.path("description").asText(""));
+            return normalized;
+        }
+
+        // If the item has "addedAt" (typical for folder list), it wraps the actual data
+        if (item.has("addedAt") || item.has("lastModifiedAt")) {
+            // Try nested fields
+            for (String field : new String[]{"item", "playlist", "resource"}) {
+                JsonNode nested = item.path(field);
+                if (nested.has("uuid")) {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private JsonNode fetchPlaylistInfo(String token, String playlistId, String countryCode) {
+        // Try v2 API first
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.set("Accept", "application/vnd.api+json");
+            headers.set("Client-Id", tidalProperties.getClientId());
+
+            String url = "https://openapi.tidal.com/v2/playlists/" + playlistId + "?countryCode=" + countryCode;
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = response.getBody();
+                JsonNode data = body.has("data") ? body.path("data") : body;
+                
+                // Convert v2 format to v1-like format for compatibility
+                ObjectNode result = objectMapper.createObjectNode();
+                result.put("uuid", data.path("id").asText(playlistId));
+                
+                if (data.has("attributes")) {
+                    JsonNode attrs = data.path("attributes");
+                    result.put("title", attrs.path("name").asText(attrs.path("title").asText("")));
+                    result.put("numberOfTracks", attrs.path("numberOfItems").asInt(
+                            attrs.path("numberOfTracks").asInt(0)));
+                    result.put("description", attrs.path("description").asText(""));
+                }
+                
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("[Tidal] v2 fetchPlaylistInfo failed, trying v1: {}", e.getMessage());
+        }
+        
+        // Fallback to v1 API
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(token);
@@ -840,6 +1093,55 @@ public class TidalServiceImpl implements TidalService {
 
     private List<JsonNode> fetchPlaylistTracks(String token, String playlistId, String countryCode) {
         List<JsonNode> allItems = new ArrayList<>();
+        
+        // Try v2 API first
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.set("Accept", "application/vnd.api+json");
+            headers.set("Client-Id", tidalProperties.getClientId());
+
+            String url = "https://openapi.tidal.com/v2/playlists/" + playlistId + "/relationships/items?countryCode=" + countryCode + "&include=items";
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = response.getBody();
+                
+                // v2 returns tracks in "included" array
+                if (body.has("included") && body.path("included").isArray()) {
+                    for (JsonNode inc : body.path("included")) {
+                        if ("tracks".equals(inc.path("type").asText())) {
+                            ObjectNode track = objectMapper.createObjectNode();
+                            track.put("id", inc.path("id").asText());
+                            
+                            if (inc.has("attributes")) {
+                                JsonNode attrs = inc.path("attributes");
+                                track.put("title", attrs.path("title").asText(""));
+                                track.put("duration", attrs.path("duration").asInt(0));
+                                track.put("trackNumber", attrs.path("trackNumber").asInt(0));
+                                track.put("isrc", attrs.path("isrc").asText(""));
+                            }
+                            
+                            // Wrap in item format for compatibility
+                            ObjectNode item = objectMapper.createObjectNode();
+                            item.set("item", track);
+                            item.put("type", "track");
+                            allItems.add(item);
+                        }
+                    }
+                }
+                
+                if (!allItems.isEmpty()) {
+                    log.info("[Tidal] v2 Total tracks fetched: {}", allItems.size());
+                    return allItems;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[Tidal] v2 fetchPlaylistTracks failed, trying v1: {}", e.getMessage());
+        }
+
+        // Fallback to v1 API
         int offset = 0;
         int limit = 100;
 
