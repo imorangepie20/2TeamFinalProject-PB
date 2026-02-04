@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class TidalImportResponse {
     private boolean success;
+    private String message;
     private Long playlistId;
     private String title;
     private Integer importedTracks;

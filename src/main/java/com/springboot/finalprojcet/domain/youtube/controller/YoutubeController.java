@@ -33,8 +33,10 @@ public class YoutubeController {
 
     @GetMapping("/youtube-music/auth/login")
     @Operation(summary = "로그인 URL 생성", description = "Google OAuth 로그인 URL을 생성합니다.")
-    public ResponseEntity<Map<String, Object>> getLoginUrl(@RequestParam(required = false) String visitorId) {
-        return ResponseEntity.ok(youtubeService.getLoginUrl(visitorId));
+    public ResponseEntity<Map<String, Object>> getLoginUrl(
+            @RequestParam(required = false) String visitorId,
+            @RequestParam(required = false) String redirectUri) {
+        return ResponseEntity.ok(youtubeService.getLoginUrl(visitorId, redirectUri));
     }
 
     @PostMapping("/youtube-music/auth/exchange")

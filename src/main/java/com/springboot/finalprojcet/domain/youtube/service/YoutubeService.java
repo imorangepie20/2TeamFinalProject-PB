@@ -7,7 +7,7 @@ public interface YoutubeService {
     Map<String, Object> searchVideo(String query, int maxResults);
 
     // OAuth
-    Map<String, Object> getLoginUrl(String visitorId);
+    Map<String, Object> getLoginUrl(String visitorId, String redirectUri);
 
     Map<String, Object> exchangeToken(String code, String state, String redirectUri);
 

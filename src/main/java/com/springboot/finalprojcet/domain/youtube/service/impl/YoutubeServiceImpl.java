@@ -5,6 +5,7 @@ import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
 import com.springboot.finalprojcet.domain.youtube.service.YoutubeService;
+import com.springboot.finalprojcet.domain.youtube.store.YoutubeTokenStore;
 import com.springboot.finalprojcet.entity.PlaylistTracks;
 import com.springboot.finalprojcet.entity.Playlists;
 import com.springboot.finalprojcet.entity.Tracks;
@@ -27,7 +28,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +39,7 @@ public class YoutubeServiceImpl implements YoutubeService {
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
     private final ObjectMapper objectMapper;
+    private final YoutubeTokenStore tokenStore;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${youtube.key}")
@@ -53,32 +54,6 @@ public class YoutubeServiceImpl implements YoutubeService {
     private static final String YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3";
     private static final String GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
     private static final String GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-
-    // In-memory storage for MVP
-    private final Map<String, TokenInfo> userTokens = new ConcurrentHashMap<>();
-    private final Map<String, PkceContext> pkceContexts = new ConcurrentHashMap<>();
-
-    private static class TokenInfo {
-        String accessToken;
-        String refreshToken;
-        long expiresAt;
-
-        public TokenInfo(String accessToken, String refreshToken, long expiresIn) {
-            this.accessToken = accessToken;
-            this.refreshToken = refreshToken;
-            this.expiresAt = System.currentTimeMillis() + (expiresIn * 1000);
-        }
-    }
-
-    private static class PkceContext {
-        String codeVerifier;
-        String visitorId;
-
-        public PkceContext(String codeVerifier, String visitorId) {
-            this.codeVerifier = codeVerifier;
-            this.visitorId = visitorId;
-        }
-    }
 
     // --- Public Search ---
 
@@ -137,7 +112,7 @@ public class YoutubeServiceImpl implements YoutubeService {
     // --- OAuth ---
 
     @Override
-    public Map<String, Object> getLoginUrl(String visitorId) {
+    public Map<String, Object> getLoginUrl(String visitorId, String redirectUri) {
         if (clientId == null)
             throw new RuntimeException("YouTube Client ID not configured");
 
@@ -145,18 +120,20 @@ public class YoutubeServiceImpl implements YoutubeService {
         String codeChallenge = generateCodeChallenge(codeVerifier);
         String state = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
 
-        pkceContexts.put(state, new PkceContext(codeVerifier, visitorId));
+        // Save PKCE context to Redis
+        tokenStore.savePkceContext(state, new YoutubeTokenStore.PkceContext(codeVerifier, visitorId));
 
-        String scopes = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/userinfo.profile";
+        String scopes = "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.profile";
 
-        // This redirect URI must match what is registered in Google Console
-        // For local dev, usually http://localhost:5173/youtube-callback
-        String redirectUri = "http://localhost:5173/youtube-callback";
+        // Use provided redirect URI or fallback to default
+        String validRedirectUri = (redirectUri != null && !redirectUri.isEmpty()) 
+                ? redirectUri 
+                : "http://localhost/youtube-callback";
 
         String authUrl = UriComponentsBuilder.fromHttpUrl(GOOGLE_AUTH_URL)
                 .queryParam("client_id", clientId)
                 .queryParam("response_type", "code")
-                .queryParam("redirect_uri", redirectUri)
+                .queryParam("redirect_uri", validRedirectUri)
                 .queryParam("scope", scopes)
                 .queryParam("state", state)
                 .queryParam("code_challenge_method", "S256")
@@ -170,7 +147,7 @@ public class YoutubeServiceImpl implements YoutubeService {
 
     @Override
     public Map<String, Object> exchangeToken(String code, String state, String redirectUri) {
-        PkceContext context = pkceContexts.remove(state);
+        YoutubeTokenStore.PkceContext context = tokenStore.removePkceContext(state);
         if (context == null)
             throw new IllegalArgumentException("Invalid state");
 
@@ -194,7 +171,8 @@ public class YoutubeServiceImpl implements YoutubeService {
             Integer expiresIn = (Integer) response.get("expires_in");
 
             String tokenKey = context.visitorId != null ? context.visitorId : "default";
-            userTokens.put(tokenKey, new TokenInfo(accessToken, refreshToken, expiresIn));
+            // Save token to Redis for persistence
+            tokenStore.saveToken(tokenKey, new YoutubeTokenStore.TokenInfo(accessToken, refreshToken, expiresIn));
 
             // Get User Info
             HttpHeaders profileHeaders = new HttpHeaders();
@@ -222,9 +200,10 @@ public class YoutubeServiceImpl implements YoutubeService {
     @Override
     public Map<String, Object> getAuthStatus(String visitorId) {
         String tokenKey = visitorId != null ? visitorId : "default";
-        TokenInfo info = userTokens.get(tokenKey);
+        // Check Redis for token
+        boolean hasToken = tokenStore.hasToken(tokenKey);
 
-        if (info == null)
+        if (!hasToken)
             return Map.of("connected", false);
 
         // Optionally verify token validity
@@ -234,25 +213,26 @@ public class YoutubeServiceImpl implements YoutubeService {
     @Override
     public void logout(String visitorId) {
         String tokenKey = visitorId != null ? visitorId : "default";
-        userTokens.remove(tokenKey);
+        // Remove token from Redis
+        tokenStore.removeToken(tokenKey);
     }
 
     // --- Data ---
 
     private String getValidToken(String visitorId) {
         String tokenKey = visitorId != null ? visitorId : "default";
-        TokenInfo info = userTokens.get(tokenKey);
+        YoutubeTokenStore.TokenInfo info = tokenStore.getToken(tokenKey);
         if (info == null)
             throw new RuntimeException("Not authenticated");
 
         if (System.currentTimeMillis() >= info.expiresAt - 60000) {
-            // Refresh
-            refreshToken(info);
+            // Refresh token and update in Redis
+            refreshToken(tokenKey, info);
         }
         return info.accessToken;
     }
 
-    private void refreshToken(TokenInfo info) {
+    private void refreshToken(String tokenKey, YoutubeTokenStore.TokenInfo info) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
@@ -269,6 +249,10 @@ public class YoutubeServiceImpl implements YoutubeService {
             info.accessToken = (String) response.get("access_token");
             Integer expiresIn = (Integer) response.get("expires_in");
             info.expiresAt = System.currentTimeMillis() + (expiresIn * 1000);
+            
+            // Update token in Redis
+            tokenStore.saveToken(tokenKey, info);
+            log.debug("Refreshed and saved YouTube token for: {}", tokenKey);
         } catch (Exception e) {
             log.error("Token Refresh Failed", e);
             throw new RuntimeException("Token refresh failed");
@@ -425,6 +409,18 @@ public class YoutubeServiceImpl implements YoutubeService {
     @Override
     @Transactional
     public Map<String, Object> importPlaylist(String visitorId, String playlistId, Long userId) {
+        // 중복 체크: 이미 가져온 플레이리스트인지 확인
+        String externalId = "youtube:" + playlistId;
+        if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
+            return Map.of(
+                    "success", true,
+                    "message", "Already imported",
+                    "playlistId", 0,
+                    "title", "",
+                    "importedTracks", 0,
+                    "totalTracks", 0);
+        }
+
         String accessToken = getValidToken(visitorId);
 
         // 1. Get Playlist Info

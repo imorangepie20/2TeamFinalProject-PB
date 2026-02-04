@@ -24,4 +24,7 @@ public interface PlaylistRepository extends JpaRepository<Playlists, Long> {
     List<Playlists> findRandomEmsByUserId(@Param("userId") Long userId, @Param("count") int count);
 
     List<Playlists> findBySpaceType(SpaceType spaceType);
+
+    // 중복 체크용: externalId와 userId로 검색
+    boolean existsByExternalIdAndUserUserId(String externalId, Long userId);
 }

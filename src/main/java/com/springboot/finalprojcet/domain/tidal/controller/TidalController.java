@@ -32,7 +32,7 @@ public class TidalController {
                     java.net.URL url = new java.net.URL(referer);
                     origin = url.getProtocol() + "://" + url.getHost() + (url.getPort() > 0 ? ":" + url.getPort() : "");
                 } catch (Exception e) {
-                    origin = "http://localhost:5173";
+                    origin = "http://localhost";
                 }
             }
         }

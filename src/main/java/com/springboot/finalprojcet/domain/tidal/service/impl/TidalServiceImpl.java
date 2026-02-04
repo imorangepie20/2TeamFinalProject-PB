@@ -2,12 +2,14 @@ package com.springboot.finalprojcet.domain.tidal.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
 import com.springboot.finalprojcet.domain.tidal.config.TidalProperties;
 import com.springboot.finalprojcet.domain.tidal.dto.*;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
 import com.springboot.finalprojcet.domain.tidal.service.TidalService;
+import com.springboot.finalprojcet.domain.tidal.store.TidalTokenStore;
 import com.springboot.finalprojcet.domain.user.repository.UserRepository;
 import com.springboot.finalprojcet.entity.PlaylistTracks;
 import com.springboot.finalprojcet.entity.Playlists;
@@ -30,7 +32,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -44,19 +45,7 @@ public class TidalServiceImpl implements TidalService {
     private final PlaylistRepository playlistRepository;
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
-
-    // Token storage (in production, use Redis)
-    private final Map<String, VisitorToken> visitorTokens = new ConcurrentHashMap<>();
-    private final Map<String, String> visitorPkceVerifiers = new ConcurrentHashMap<>();
-
-    private static class VisitorToken {
-        String accessToken;
-        String refreshToken;
-        long expiresAt;
-        String userId;
-        String countryCode;
-        String username;
-    }
+    private final TidalTokenStore tokenStore;
 
     @Override
     public TidalLoginUrlResponse getLoginUrl(String visitorId, String origin) {
@@ -64,11 +53,13 @@ public class TidalServiceImpl implements TidalService {
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
         if (visitorId != null && !visitorId.isEmpty()) {
-            visitorPkceVerifiers.put(visitorId, codeVerifier);
+            // Save PKCE verifier to Redis
+            tokenStore.savePkceVerifier(visitorId, codeVerifier);
         }
 
         String redirectUri = resolveRedirectUri(origin);
-        String scopes = "r_usr w_usr w_sub";
+        // Use new OAuth2 scopes only (mixing old and new causes error 1002)
+        String scopes = "user.read playlists.read playlists.write collection.read";
 
         String authUrl = String.format(
                 "https://login.tidal.com/authorize?response_type=code&client_id=%s&redirect_uri=%s&scope=%s&code_challenge=%s&code_challenge_method=S256",
@@ -85,7 +76,8 @@ public class TidalServiceImpl implements TidalService {
         try {
             String codeVerifier = null;
             if (request.getVisitorId() != null) {
-                codeVerifier = visitorPkceVerifiers.remove(request.getVisitorId());
+                // Get and remove PKCE verifier from Redis
+                codeVerifier = tokenStore.removePkceVerifier(request.getVisitorId());
             }
 
             if (codeVerifier == null) {
@@ -129,16 +121,12 @@ public class TidalServiceImpl implements TidalService {
             // Get session info
             TidalAuthStatusResponse.TidalUserInfo userInfo = fetchSessionInfo(accessToken);
 
-            // Store token
+            // Store token to Redis for persistence
             if (request.getVisitorId() != null) {
-                VisitorToken vt = new VisitorToken();
-                vt.accessToken = accessToken;
-                vt.refreshToken = refreshToken;
-                vt.expiresAt = System.currentTimeMillis() + (expiresIn * 1000);
-                vt.userId = userInfo.getUserId();
-                vt.countryCode = userInfo.getCountryCode();
-                vt.username = userInfo.getUsername();
-                visitorTokens.put(request.getVisitorId(), vt);
+                TidalTokenStore.TokenInfo tokenInfo = new TidalTokenStore.TokenInfo(
+                        accessToken, refreshToken, expiresIn,
+                        userInfo.getUserId(), userInfo.getCountryCode(), userInfo.getUsername());
+                tokenStore.saveToken(request.getVisitorId(), tokenInfo);
             }
 
             return TidalExchangeResponse.builder()
@@ -157,20 +145,23 @@ public class TidalServiceImpl implements TidalService {
 
     @Override
     public TidalAuthStatusResponse getAuthStatus(String visitorId) {
-        if (visitorId != null && visitorTokens.containsKey(visitorId)) {
-            VisitorToken vt = visitorTokens.get(visitorId);
-            if (System.currentTimeMillis() < vt.expiresAt) {
-                return TidalAuthStatusResponse.builder()
-                        .authenticated(true)
-                        .userConnected(true)
-                        .user(TidalAuthStatusResponse.TidalUserInfo.builder()
-                                .userId(vt.userId)
-                                .countryCode(vt.countryCode)
-                                .username(vt.username)
-                                .build())
-                        .build();
-            } else {
-                visitorTokens.remove(visitorId);
+        if (visitorId != null) {
+            TidalTokenStore.TokenInfo tokenInfo = tokenStore.getToken(visitorId);
+            if (tokenInfo != null) {
+                if (System.currentTimeMillis() < tokenInfo.expiresAt) {
+                    return TidalAuthStatusResponse.builder()
+                            .authenticated(true)
+                            .userConnected(true)
+                            .user(TidalAuthStatusResponse.TidalUserInfo.builder()
+                                    .userId(tokenInfo.userId)
+                                    .countryCode(tokenInfo.countryCode)
+                                    .username(tokenInfo.username)
+                                    .build())
+                            .build();
+                } else {
+                    // Token expired, remove from Redis
+                    tokenStore.removeToken(visitorId);
+                }
             }
         }
 
@@ -184,19 +175,21 @@ public class TidalServiceImpl implements TidalService {
     @Override
     public void logout(String visitorId) {
         if (visitorId != null) {
-            visitorTokens.remove(visitorId);
+            // Remove token from Redis
+            tokenStore.removeToken(visitorId);
         }
     }
 
     @Override
     public TidalPlaylistResponse getUserPlaylists(String visitorId) {
-        VisitorToken vt = getValidToken(visitorId);
-        if (vt == null) {
+        TidalTokenStore.TokenInfo tokenInfo = getValidToken(visitorId);
+        if (tokenInfo == null) {
             return TidalPlaylistResponse.builder().playlists(Collections.emptyList()).build();
         }
 
         try {
-            List<JsonNode> playlists = fetchTidalPlaylists(vt.accessToken, vt.userId, vt.countryCode);
+            List<JsonNode> playlists = fetchTidalPlaylists(tokenInfo.accessToken, tokenInfo.userId,
+                    tokenInfo.countryCode);
             List<TidalPlaylistResponse.TidalPlaylistItem> items = new ArrayList<>();
 
             for (JsonNode p : playlists) {
@@ -229,22 +222,36 @@ public class TidalServiceImpl implements TidalService {
             return TidalImportResponse.builder().success(false).error("userId is required").build();
         }
 
-        VisitorToken vt = getValidToken(request.getVisitorId());
-        if (vt == null) {
+        TidalTokenStore.TokenInfo tokenInfo = getValidToken(request.getVisitorId());
+        if (tokenInfo == null) {
             return TidalImportResponse.builder().success(false).error("Not authenticated").build();
         }
 
         try {
-            String countryCode = vt.countryCode != null ? vt.countryCode : "KR";
+            // Check for duplicate import
+            String externalId = "tidal:" + request.getPlaylistId();
+            if (playlistRepository.existsByExternalIdAndUserUserId(externalId, request.getUserId())) {
+                log.info("[Tidal] Playlist already imported: {}", request.getPlaylistId());
+                return TidalImportResponse.builder()
+                        .success(true)
+                        .message("Already imported")
+                        .playlistId(0L)
+                        .title("")
+                        .importedTracks(0)
+                        .totalTracks(0)
+                        .build();
+            }
+
+            String countryCode = tokenInfo.countryCode != null ? tokenInfo.countryCode : "KR";
 
             // 1. Get playlist info
-            JsonNode playlist = fetchPlaylistInfo(vt.accessToken, request.getPlaylistId(), countryCode);
+            JsonNode playlist = fetchPlaylistInfo(tokenInfo.accessToken, request.getPlaylistId(), countryCode);
             if (playlist == null) {
                 return TidalImportResponse.builder().success(false).error("Failed to fetch playlist info").build();
             }
 
             // 2. Get playlist tracks
-            List<JsonNode> tracks = fetchPlaylistTracks(vt.accessToken, request.getPlaylistId(), countryCode);
+            List<JsonNode> tracks = fetchPlaylistTracks(tokenInfo.accessToken, request.getPlaylistId(), countryCode);
 
             log.info("[Tidal] Importing playlist \"{}\" with {} tracks", playlist.path("title").asText(),
                     tracks.size());
@@ -264,9 +271,9 @@ public class TidalServiceImpl implements TidalService {
                     .description(playlist.path("description").asText(""))
                     .coverImage(coverImage)
                     .sourceType(SourceType.Platform)
-                    .externalId(request.getPlaylistId())
+                    .externalId(externalId)
                     .spaceType(SpaceType.PMS)
-                    .statusFlag(StatusFlag.PRP)
+                    .statusFlag(StatusFlag.Active)
                     .build();
 
             playlistRepository.save(newPlaylist);
@@ -368,6 +375,15 @@ public class TidalServiceImpl implements TidalService {
             int syncedCount = 0;
             for (JsonNode p : playlists) {
                 try {
+                    String playlistUuid = p.path("uuid").asText();
+                    String externalId = "tidal:" + playlistUuid;
+
+                    // Skip if already imported
+                    if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
+                        log.info("[Sync] Skipping already imported playlist: {}", playlistUuid);
+                        continue;
+                    }
+
                     String squareImage = p.path("squareImage").asText(null);
                     String coverImage = squareImage != null
                             ? "https://resources.tidal.com/images/" + squareImage.replace("-", "/") + "/320x320.jpg"
@@ -378,9 +394,9 @@ public class TidalServiceImpl implements TidalService {
                             .title(p.path("title").asText())
                             .description(p.path("description").asText("Tidal Playlist"))
                             .spaceType(SpaceType.PMS)
-                            .statusFlag(StatusFlag.PRP)
+                            .statusFlag(StatusFlag.Active)
                             .sourceType(SourceType.Platform)
-                            .externalId(p.path("uuid").asText())
+                            .externalId(externalId)
                             .coverImage(coverImage)
                             .build();
 
@@ -442,7 +458,7 @@ public class TidalServiceImpl implements TidalService {
 
             MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
             body.add("client_id", tidalProperties.getClientId());
-            body.add("scope", "r_usr w_usr w_sub");
+            body.add("scope", "user.read playlists.read playlists.write collection.read");
 
             HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(body, headers);
             // Tidal Auth Base URL usually ends with /oauth2 or similar.
@@ -482,7 +498,7 @@ public class TidalServiceImpl implements TidalService {
             body.add("client_id", tidalProperties.getClientId());
             body.add("device_code", request.getDeviceCode());
             body.add("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
-            body.add("scope", "r_usr w_usr w_sub");
+            body.add("scope", "user.read playlists.read playlists.write collection.read");
 
             HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(body, headers);
             String url = tidalProperties.getAuthUrl() + "/token";
@@ -554,41 +570,94 @@ public class TidalServiceImpl implements TidalService {
         return tidalProperties.getRedirectUri();
     }
 
-    private VisitorToken getValidToken(String visitorId) {
+    private TidalTokenStore.TokenInfo getValidToken(String visitorId) {
         if (visitorId == null)
             return null;
-        VisitorToken vt = visitorTokens.get(visitorId);
-        if (vt == null || System.currentTimeMillis() >= vt.expiresAt) {
-            if (vt != null)
-                visitorTokens.remove(visitorId);
+        TidalTokenStore.TokenInfo tokenInfo = tokenStore.getToken(visitorId);
+        if (tokenInfo == null || System.currentTimeMillis() >= tokenInfo.expiresAt) {
+            if (tokenInfo != null)
+                tokenStore.removeToken(visitorId);
             return null;
         }
-        return vt;
+        return tokenInfo;
     }
 
     private TidalAuthStatusResponse.TidalUserInfo fetchSessionInfo(String accessToken) {
+        // First, try to extract userId from JWT token directly
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(accessToken);
-            headers.set("Accept", "application/vnd.tidal.v1+json");
+            String[] parts = accessToken.split("\\.");
+            if (parts.length >= 2) {
+                String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+                JsonNode jwt = objectMapper.readTree(payload);
 
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
-            ResponseEntity<JsonNode> response = restTemplate.exchange(
-                    tidalProperties.getApiUrl() + "/sessions",
-                    HttpMethod.GET, entity, JsonNode.class);
+                // JWT contains "uid" (user id) and "cc" (country code)
+                String userId = jwt.has("uid") ? String.valueOf(jwt.path("uid").asLong()) : null;
+                String countryCode = jwt.path("cc").asText(null);
 
-            JsonNode session = response.getBody();
-            if (session != null) {
-                return TidalAuthStatusResponse.TidalUserInfo.builder()
-                        .userId(session.path("userId").asText(session.path("user_id").asText()))
-                        .countryCode(session.path("countryCode").asText(session.path("country_code").asText()))
-                        .username(session.path("username").asText("Tidal User"))
-                        .build();
+                if (userId != null && !userId.isEmpty() && !userId.equals("0")) {
+                    log.info("[Tidal] Extracted from JWT - userId: {}, countryCode: {}", userId, countryCode);
+                    return TidalAuthStatusResponse.TidalUserInfo.builder()
+                            .userId(userId)
+                            .countryCode(countryCode)
+                            .username("Tidal User")
+                            .build();
+                }
             }
         } catch (Exception e) {
-            log.warn("[Tidal] Session fetch failed: {}", e.getMessage());
+            log.warn("[Tidal] Failed to parse JWT: {}", e.getMessage());
         }
 
+        // Fallback: try API endpoints
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        headers.set("Accept", "application/vnd.tidal.v1+json");
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        String[] endpoints = { "/users/me", "/me", "/sessions" };
+
+        for (String endpoint : endpoints) {
+            try {
+                ResponseEntity<JsonNode> response = restTemplate.exchange(
+                        tidalProperties.getApiUrl() + endpoint,
+                        HttpMethod.GET, entity, JsonNode.class);
+
+                JsonNode data = response.getBody();
+                log.info("[Tidal] {} response: {}", endpoint, data);
+
+                if (data != null) {
+                    String userId = null;
+                    if (data.has("userId")) {
+                        userId = data.path("userId").asText();
+                    } else if (data.has("user_id")) {
+                        userId = data.path("user_id").asText();
+                    } else if (data.has("id")) {
+                        userId = data.path("id").asText();
+                    }
+
+                    String countryCode = data.path("countryCode").asText(
+                            data.path("country_code").asText(
+                                    data.path("country").asText(null)));
+
+                    String username = data.path("username").asText(
+                            data.path("name").asText(
+                                    data.path("firstName").asText("Tidal User")));
+
+                    if (userId != null && !userId.isEmpty()) {
+                        log.info("[Tidal] Found user info - userId: {}, countryCode: {}, username: {}",
+                                userId, countryCode, username);
+                        return TidalAuthStatusResponse.TidalUserInfo.builder()
+                                .userId(userId)
+                                .countryCode(countryCode)
+                                .username(username)
+                                .build();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[Tidal] {} failed: {}", endpoint, e.getMessage());
+            }
+        }
+
+        log.warn("[Tidal] Could not fetch user info from any endpoint");
         return TidalAuthStatusResponse.TidalUserInfo.builder().username("Tidal User").build();
     }
 
@@ -607,6 +676,13 @@ public class TidalServiceImpl implements TidalService {
                 return Collections.emptyList();
             }
 
+            // Try alternative APIs first (works with new OAuth2 scopes)
+            List<JsonNode> altResult = fetchPlaylistsViaAlternativeApis(token, tidalUserId, countryCode);
+            if (!altResult.isEmpty()) {
+                return altResult;
+            }
+
+            // Fallback to v1 API (requires r_usr scope - may fail with new OAuth2)
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(token);
             headers.set("Accept", "application/vnd.tidal.v1+json");
@@ -619,6 +695,7 @@ public class TidalServiceImpl implements TidalService {
             for (String endpoint : endpoints) {
                 try {
                     String url = tidalProperties.getApiUrl() + endpoint + "?countryCode=" + countryCode + "&limit=50";
+                    log.info("[Tidal] Trying v1 endpoint: {}", url);
                     HttpEntity<Void> entity = new HttpEntity<>(headers);
                     ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity,
                             JsonNode.class);
@@ -627,22 +704,19 @@ public class TidalServiceImpl implements TidalService {
                         JsonNode data = response.getBody();
                         JsonNode items = data.has("items") ? data.path("items") : data.path("data");
                         if (items.isArray() && items.size() > 0) {
-                            log.info("[Tidal] Found {} playlists via {}", items.size(), endpoint);
-                            // Log titles for debugging
-                            List<String> titles = new ArrayList<>();
-                            items.forEach(node -> titles.add(node.path("title").asText()));
-                            log.info("[Tidal] Playlists: {}", titles);
-
+                            log.info("[Tidal] Found {} playlists via v1 {}", items.size(), endpoint);
                             List<JsonNode> result = new ArrayList<>();
                             items.forEach(result::add);
                             return result;
                         } else {
-                            log.info("[Tidal] No playlists found via {} (items empty). Raw: {}", endpoint,
-                                    data.toString());
+                            log.info("[Tidal] v1 endpoint {} returned empty playlists", endpoint);
                         }
                     }
+                } catch (org.springframework.web.client.HttpClientErrorException e) {
+                    log.warn("[Tidal] v1 Endpoint {} returned {}: {}", endpoint, e.getStatusCode(),
+                            e.getResponseBodyAsString());
                 } catch (Exception e) {
-                    log.warn("[Tidal] Endpoint {} failed: {}", endpoint, e.getMessage());
+                    log.warn("[Tidal] v1 Endpoint {} failed: {}", endpoint, e.getMessage());
                 }
             }
 
@@ -651,6 +725,100 @@ public class TidalServiceImpl implements TidalService {
             log.error("[Tidal] fetchTidalPlaylists error", e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * Fetch playlists via multiple API approaches (try different endpoints)
+     * Updated for Tidal API v2 with proper headers and endpoint patterns
+     */
+    private List<JsonNode> fetchPlaylistsViaAlternativeApis(String token, String tidalUserId, String countryCode) {
+        // Try multiple endpoint patterns - prioritize official OpenAPI v2 endpoints
+        String[][] endpointConfigs = {
+                // {url, accept header, use client-id header}
+                // Official Tidal OpenAPI v2 endpoints
+                { "https://openapi.tidal.com/v2/me/playlists?countryCode=" + countryCode + "&limit=50",
+                        "application/vnd.api+json", "true" },
+                { "https://openapi.tidal.com/v2/playlists/me?countryCode=" + countryCode + "&limit=50",
+                        "application/vnd.api+json", "true" },
+                // Alternative API base URLs
+                { "https://api.tidal.com/v2/me/playlists?countryCode=" + countryCode + "&limit=50", "application/json",
+                        "true" },
+                { "https://api.tidal.com/v2/my-collection/playlists?countryCode=" + countryCode + "&limit=50",
+                        "application/json", "true" },
+                { "https://api.tidal.com/v2/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
+                        + "&limit=50", "application/json", "false" },
+                // Legacy v1 endpoints as fallback
+                { "https://listen.tidal.com/v1/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
+                        + "&limit=50", "application/vnd.tidal.v1+json", "false" },
+                { "https://api.tidalhifi.com/v1/users/" + tidalUserId + "/playlists?countryCode=" + countryCode
+                        + "&limit=50", "application/vnd.tidal.v1+json", "false" },
+        };
+
+        for (String[] config : endpointConfigs) {
+            try {
+                String url = config[0];
+                HttpHeaders reqHeaders = new HttpHeaders();
+                reqHeaders.setBearerAuth(token);
+                reqHeaders.set("Accept", config[1]);
+
+                // For OpenAPI v2, use Client-Id header instead of x-tidal-token
+                if ("true".equals(config[2])) {
+                    reqHeaders.set("Client-Id", tidalProperties.getClientId());
+                } else {
+                    reqHeaders.set("x-tidal-token", tidalProperties.getClientId());
+                }
+
+                log.info("[Tidal] Trying alternative endpoint: {}", url);
+                HttpEntity<Void> entity = new HttpEntity<>(reqHeaders);
+                ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    JsonNode data = response.getBody();
+                    log.info("[Tidal] Alternative endpoint success: {} - Response keys: {}", url, data.fieldNames());
+
+                    // Handle various response structures from Tidal API
+                    JsonNode items = null;
+
+                    // OpenAPI v2 uses JSON:API format with "data" array
+                    if (data.has("data") && data.path("data").isArray()) {
+                        items = data.path("data");
+                    } else if (data.has("items") && data.path("items").isArray()) {
+                        items = data.path("items");
+                    } else if (data.isArray()) {
+                        items = data;
+                    }
+
+                    if (items != null && items.size() > 0) {
+                        log.info("[Tidal] Found {} playlists via {}", items.size(), url);
+                        List<JsonNode> result = new ArrayList<>();
+
+                        for (JsonNode item : items) {
+                            // OpenAPI v2 JSON:API format has nested attributes
+                            if (item.has("attributes")) {
+                                // Merge id and attributes for compatibility
+                                ObjectNode merged = objectMapper.createObjectNode();
+                                merged.put("uuid", item.path("id").asText());
+                                JsonNode attrs = item.path("attributes");
+                                attrs.fieldNames().forEachRemaining(field -> merged.set(field, attrs.path(field)));
+                                result.add(merged);
+                            } else {
+                                result.add(item);
+                            }
+                        }
+                        return result;
+                    } else {
+                        log.info("[Tidal] Endpoint returned empty or no playlists: {}", url);
+                    }
+                }
+            } catch (org.springframework.web.client.HttpClientErrorException e) {
+                log.info("[Tidal] Alternative endpoint {} returned {}: {}", config[0], e.getStatusCode(),
+                        e.getMessage());
+            } catch (Exception e) {
+                log.debug("[Tidal] Alternative endpoint failed: {}", e.getMessage());
+            }
+        }
+
+        return Collections.emptyList();
     }
 
     private JsonNode fetchPlaylistInfo(String token, String playlistId, String countryCode) {
@@ -775,8 +943,8 @@ public class TidalServiceImpl implements TidalService {
 
     @Override
     public TidalSearchResponse search(String query, String type, int limit, String countryCode, String visitorId) {
-        VisitorToken vt = getValidToken(visitorId);
-        String token = (vt != null) ? vt.accessToken : null;
+        TidalTokenStore.TokenInfo tokenInfo = getValidToken(visitorId);
+        String token = (tokenInfo != null) ? tokenInfo.accessToken : null;
 
         // If strict on user token, we might return empty if null.
         // But for search, we might want to try Client Credentials if implemented,
@@ -789,7 +957,7 @@ public class TidalServiceImpl implements TidalService {
         }
 
         if (countryCode == null) {
-            countryCode = (vt.countryCode != null) ? vt.countryCode : "US";
+            countryCode = (tokenInfo.countryCode != null) ? tokenInfo.countryCode : "US";
         }
 
         try {
