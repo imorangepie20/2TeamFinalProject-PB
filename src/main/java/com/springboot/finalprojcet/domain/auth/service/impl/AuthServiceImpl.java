@@ -7,6 +7,15 @@ import com.springboot.finalprojcet.domain.auth.dto.sign.SignupRequestDto;
 import com.springboot.finalprojcet.domain.auth.dto.sign.SignupResponseDto;
 import com.springboot.finalprojcet.domain.auth.jwt.JwtTokenProvider;
 import com.springboot.finalprojcet.domain.auth.service.AuthService;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalAuthStatusResponse;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalExchangeRequest;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalExchangeResponse;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalImportRequest;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalImportResponse;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalSyncRequest;
+import com.springboot.finalprojcet.domain.tidal.dto.TidalSyncResponse;
+import com.springboot.finalprojcet.domain.tidal.service.TidalService;
+import com.springboot.finalprojcet.domain.tidal.store.TidalTokenStore;
 import com.springboot.finalprojcet.domain.user.repository.UserRepository;
 import com.springboot.finalprojcet.entity.Users;
 import com.springboot.finalprojcet.domain.user.repository.MusicGenresRepository;
@@ -14,9 +23,11 @@ import com.springboot.finalprojcet.domain.user.repository.UserGenresRepository;
 import com.springboot.finalprojcet.entity.UserGenres;
 import com.springboot.finalprojcet.enums.RoleType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -26,6 +37,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
+    private final TidalService tidalService;
 
     @Override
     public LoginResponseDto login(LoginRequestDto loginRequestDto) {
@@ -133,6 +145,63 @@ public class AuthServiceImpl implements AuthService {
                             .build();
                     userGenresRepository.save(userGenre);
                 });
+            }
+        }
+
+        // Tidal 연동 처리 (회원가입 시 Tidal 연동 시)
+        if (signupRequestDto.getTidalConnected() != null && signupRequestDto.getTidalConnected()) {
+            try {
+                log.info("[Signup] Tidal 연동 시작: userId={}, visitorId={}", user.getUserId(),
+                        signupRequestDto.getTidalVisitorId());
+
+                // Tidal 토큰 저장 (Redis에 저장)
+                if (signupRequestDto.getTidalVisitorId() != null && signupRequestDto.getTidalAccessToken() != null) {
+                    TidalAuthStatusResponse.TidalUserInfo userInfo = TidalAuthStatusResponse.TidalUserInfo.builder()
+                            .userId(signupRequestDto.getTidalVisitorId())
+                            .countryCode("KR")
+                            .username(user.getEmail())
+                            .build();
+
+                    TidalTokenStore.TokenInfo tokenInfo = new TidalTokenStore.TokenInfo(
+                            signupRequestDto.getTidalAccessToken(),
+                            signupRequestDto.getTidalRefreshToken(),
+                            System.currentTimeMillis() + (3600 * 1000), // 1시간 후 만료 (실제로는 갱신 필요)
+                            signupRequestDto.getTidalVisitorId(),
+                            "KR",
+                            user.getEmail());
+
+                    tidalService.getTokenStore().saveToken(signupRequestDto.getTidalVisitorId(), tokenInfo);
+                    log.info("[Signup] Tidal 토큰 저장 완료: visitorId={}", signupRequestDto.getTidalVisitorId());
+                }
+
+                // 모든 Tidal 플레이리스트 자동 임포트
+                TidalAuthStatusResponse authStatus = tidalService.getAuthStatus(signupRequestDto.getTidalVisitorId());
+                if (authStatus.isAuthenticated() && authStatus.isUserConnected()) {
+                    log.info("[Signup] Tidal 인증 성공, 플레이리스트 임포트 시작");
+
+                    // Convert TidalUserInfo to Map<String, Object>
+                    java.util.Map<String, Object> userMap = new java.util.HashMap<>();
+                    if (authStatus.getUser() != null) {
+                        userMap.put("userId", authStatus.getUser().getUserId());
+                        userMap.put("countryCode", authStatus.getUser().getCountryCode());
+                        userMap.put("username", authStatus.getUser().getUsername());
+                    }
+
+                    TidalSyncRequest syncRequest = TidalSyncRequest.builder()
+                            .userId(user.getUserId())
+                            .tidalAuthData(new TidalSyncRequest.TidalAuthData(
+                                    signupRequestDto.getTidalAccessToken(),
+                                    userMap))
+                            .build();
+
+                    TidalSyncResponse syncResponse = tidalService.syncTidal(user.getUserId(), syncRequest);
+                    log.info("[Signup] Tidal 플레이리스트 {}개 임포트 완료", syncResponse.getSyncedCount());
+                } else {
+                    log.warn("[Signup] Tidal 인증 실패 또는 연결되지 않음");
+                }
+            } catch (Exception e) {
+                log.error("[Signup] Tidal 연동 중 오류 발생: {}", e.getMessage(), e);
+                // 회원가입은 성공하므로 에러는 로그만 남김
             }
         }
 

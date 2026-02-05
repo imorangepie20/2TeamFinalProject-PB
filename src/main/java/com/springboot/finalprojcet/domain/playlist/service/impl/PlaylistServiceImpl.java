@@ -45,30 +45,25 @@ public class PlaylistServiceImpl implements PlaylistService {
     @Override
     @Transactional(readOnly = true)
     public Map<String, Object> getAllPlaylists(SpaceType spaceType, StatusFlag status, Long userId) {
-        // Since the current repository might not have dynamic filtering, we might need
-        // to use a custom query or simple findAll and filter.
-        // For MVP, if the repository is a simple JpaRepository, we can rely on method
-        // naming or Specifications.
-        // Let's assume we can fetch by user and/or space type.
-        // Given the split repositories, let's look at what methods are available.
-        // If not available, we assume we need to update Repository or filter in memory
-        // (not ideal but safe for start).
-
-        // Actually, we should check the Repository first. But proceed with assumption
-        // of standard JPA.
         List<Playlists> playlists;
 
-        if (spaceType == SpaceType.GMS) {
-            playlists = playlistRepository.findBySpaceType(SpaceType.GMS);
+        // EMS만 사용자 독립적 (공용 공간)
+        // GMS, PMS는 사용자별 필터링
+        if (spaceType == SpaceType.EMS) {
+            // EMS: 모든 사용자의 EMS 플레이리스트 표시
+            playlists = playlistRepository.findBySpaceType(SpaceType.EMS);
+            log.info("[getAllPlaylists] Fetching EMS playlists (user-independent), count={}", playlists.size());
+        } else if (userId != null && spaceType != null) {
+            // GMS/PMS: 특정 사용자의 해당 공간 플레이리스트
+            playlists = playlistRepository.findByUserUserIdAndSpaceType(userId, spaceType);
+            log.info("[getAllPlaylists] Fetching {} playlists for userId={}, count={}", spaceType, userId, playlists.size());
         } else if (userId != null) {
+            // spaceType이 없으면 해당 사용자의 모든 플레이리스트
             playlists = playlistRepository.findByUserUserId(userId);
-            if (spaceType != null) {
-                playlists = playlists.stream()
-                        .filter(p -> p.getSpaceType() == spaceType)
-                        .collect(Collectors.toList());
-            }
+            log.info("[getAllPlaylists] Fetching all playlists for userId={}, count={}", userId, playlists.size());
         } else {
             playlists = new ArrayList<>();
+            log.info("[getAllPlaylists] No userId and not EMS, returning empty");
         }
 
         if (status != null) {
@@ -78,6 +73,7 @@ public class PlaylistServiceImpl implements PlaylistService {
         }
 
         List<PlaylistResponseDto> dtos = playlists.stream().map(this::convertToDto).collect(Collectors.toList());
+        log.info("[getAllPlaylists] Returning {} playlists", dtos.size());
 
         return Map.of("playlists", dtos, "total", dtos.size());
     }
@@ -261,12 +257,29 @@ public class PlaylistServiceImpl implements PlaylistService {
 
     private PlaylistResponseDto convertToDto(Playlists p) {
         Integer trackCount = playlistTracksRepository.countByPlaylistPlaylistId(p.getPlaylistId());
+        log.info("[convertToDto] playlist_id={}, title={}, trackCount={}", p.getPlaylistId(), p.getTitle(), trackCount);
 
         // Processing cover image (Tidal logic)
         String image = p.getCoverImage();
-        if (p.getExternalId() != null && p.getExternalId().startsWith("tidal_") && image != null
+        if (p.getExternalId() != null && p.getExternalId().startsWith("tidal:") && image != null
                 && !image.startsWith("http") && !image.startsWith("/")) {
             image = "https://resources.tidal.com/images/" + image.replace("-", "/") + "/640x640.jpg";
+        }
+
+        // Fallback: If coverImage is null, use first track's artwork
+        if (image == null || image.isEmpty()) {
+            try {
+                List<PlaylistTracks> tracks = playlistTracksRepository
+                        .findAllByPlaylistPlaylistIdOrderByOrderIndex(p.getPlaylistId());
+                if (!tracks.isEmpty()) {
+                    Tracks firstTrack = tracks.get(0).getTrack();
+                    if (firstTrack != null && firstTrack.getArtwork() != null && !firstTrack.getArtwork().isEmpty()) {
+                        image = firstTrack.getArtwork();
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to get fallback cover image for playlist {}: {}", p.getPlaylistId(), e.getMessage());
+            }
         }
 
         return PlaylistResponseDto.builder()

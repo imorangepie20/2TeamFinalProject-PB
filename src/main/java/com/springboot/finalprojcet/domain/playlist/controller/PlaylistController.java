@@ -21,6 +21,7 @@ import java.util.Map;
 @RequestMapping("/api/playlists")
 @Tag(name = "Playlists", description = "플레이리스트 관리 API")
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class PlaylistController {
 
     private final PlaylistService playlistService;
@@ -33,9 +34,12 @@ public class PlaylistController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         try {
             Long userId = userDetails != null ? userDetails.getUser().getUserId() : null;
-            return ResponseEntity.ok(playlistService.getAllPlaylists(spaceType, status, userId));
+            log.info("[PlaylistController] getPlaylists called - spaceType={}, status={}, userId={}", spaceType, status, userId);
+            var result = playlistService.getAllPlaylists(spaceType, status, userId);
+            log.info("[PlaylistController] returning {} playlists", ((java.util.List<?>) result.get("playlists")).size());
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("[PlaylistController] Error: ", e);
             return ResponseEntity.internalServerError()
                     .body(java.util.Map.of("error", e.getMessage(), "trace", e.getStackTrace()[0].toString()));
         }
