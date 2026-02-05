@@ -1,6 +1,7 @@
 package com.springboot.finalprojcet.domain.tidal.dto;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -9,13 +10,16 @@ import java.util.Map;
 
 @Getter
 @Setter
+@Builder
 @AllArgsConstructor
 @NoArgsConstructor
 public class TidalSyncRequest {
+    private Long userId;
     private TidalAuthData tidalAuthData;
 
     @Getter
     @Setter
+    @Builder
     @AllArgsConstructor
     @NoArgsConstructor
     public static class TidalAuthData {
@@ -26,5 +30,12 @@ public class TidalSyncRequest {
         private String refreshToken;
 
         private Map<String, Object> user;
+
+        // Convenience constructor for accessToken and user map
+        public TidalAuthData(String accessToken, Map<String, Object> user) {
+            this.accessToken = accessToken;
+            this.refreshToken = null;
+            this.user = user;
+        }
     }
 }

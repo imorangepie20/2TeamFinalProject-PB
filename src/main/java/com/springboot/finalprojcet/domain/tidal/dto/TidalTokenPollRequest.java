@@ -7,4 +7,5 @@ import lombok.Setter;
 @Setter
 public class TidalTokenPollRequest {
     private String deviceCode;
+    private String visitorId;
 }

@@ -123,4 +123,13 @@ public class TidalController {
         // directly
         return ResponseEntity.ok(tidalService.search(query, type, limit, null, visitorId));
     }
+
+    @GetMapping("/tracks/{trackId}/stream")
+    @Operation(summary = "트랙 스트리밍 URL", description = "Tidal 트랙의 스트리밍 URL을 가져옵니다.")
+    public ResponseEntity<TidalStreamUrlResponse> getStreamUrl(
+            @PathVariable String trackId,
+            @RequestParam(required = false) String visitorId,
+            @RequestParam(required = false, defaultValue = "LOSSLESS") String quality) {
+        return ResponseEntity.ok(tidalService.getStreamUrl(trackId, visitorId, quality));
+    }
 }

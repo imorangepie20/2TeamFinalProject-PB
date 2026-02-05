@@ -1,6 +1,7 @@
 package com.springboot.finalprojcet.domain.tidal.service;
 
 import com.springboot.finalprojcet.domain.tidal.dto.*;
+import com.springboot.finalprojcet.domain.tidal.store.TidalTokenStore;
 
 public interface TidalService {
     TidalLoginUrlResponse getLoginUrl(String visitorId, String origin);
@@ -26,4 +27,9 @@ public interface TidalService {
     Object getPlaylistTracks(String id, String countryCode, int limit, int offset);
 
     TidalSearchResponse search(String query, String type, int limit, String countryCode, String visitorId);
+
+    TidalTokenStore getTokenStore();
+
+    // Streaming URL for track playback
+    TidalStreamUrlResponse getStreamUrl(String trackId, String visitorId, String quality);
 }
