@@ -77,9 +77,10 @@ management:
       show-details: when_authorized
 
 # Tidal API Configuration
+# Default credentials from python-tidal (tidalapi) library for streaming support
 tidal:
-  client-id: ${TIDAL_CLIENT_ID:}
-  client-secret: ${TIDAL_CLIENT_SECRET:}
+  client-id: ${TIDAL_CLIENT_ID:fX2JxdmntZWK0ixT}
+  client-secret: ${TIDAL_CLIENT_SECRET:1Nn9AfDAjxrgJFJbKNWLeAyKGVGmINuXPPLHVXAvxAg=}
   auth-url: https://auth.tidal.com/v1/oauth2
   api-url: https://api.tidal.com/v1
   redirect-uri: ${TIDAL_REDIRECT_URI:http://localhost/tidal-callback}
