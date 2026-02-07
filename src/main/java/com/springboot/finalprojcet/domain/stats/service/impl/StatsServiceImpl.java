@@ -131,8 +131,32 @@ public class StatsServiceImpl implements StatsService {
 
     @Override
     public Map<String, Object> getBestArtists(int limit, String sortBy) {
-        // Requires complex join query. Returning empty for MVP structure.
-        return Map.of("artists", java.util.Collections.emptyList());
+        java.util.List<ArtistStats> artistStats;
+
+        // Use ORDER BY RAND() for random selection from database
+        if ("random".equals(sortBy)) {
+            artistStats = artistStatsRepository.findRandomArtists(limit);
+        } else if ("view_count".equals(sortBy)) {
+            artistStats = artistStatsRepository.findTopArtistsByViewCount(limit);
+        } else if ("like_count".equals(sortBy)) {
+            artistStats = artistStatsRepository.findTopArtistsByLikeCount(limit);
+        } else {
+            // Default: play_count
+            artistStats = artistStatsRepository.findTopArtistsByPlayCount(limit);
+        }
+
+        java.util.List<Map<String, Object>> artists = artistStats.stream()
+                .map(stats -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("name", stats.getArtistName());
+                    map.put("playCount", stats.getPlayCount());
+                    map.put("viewCount", stats.getViewCount());
+                    map.put("likeCount", stats.getLikeCount());
+                    return map;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
+        return Map.of("artists", artists);
     }
 
     @Override
