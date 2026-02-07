@@ -47,14 +47,14 @@ public class PlaylistServiceImpl implements PlaylistService {
     public Map<String, Object> getAllPlaylists(SpaceType spaceType, StatusFlag status, Long userId) {
         List<Playlists> playlists;
 
-        // EMS만 사용자 독립적 (공용 공간)
-        // GMS, PMS는 사용자별 필터링
+        // EMS는 사용자 독립적 (공용 공간)
+        // GMS, PMS는 사용자별 필터링 (개인 공간)
         if (spaceType == SpaceType.EMS) {
-            // EMS: 모든 사용자의 EMS 플레이리스트 표시
-            playlists = playlistRepository.findBySpaceType(SpaceType.EMS);
-            log.info("[getAllPlaylists] Fetching EMS playlists (user-independent), count={}", playlists.size());
+            // EMS: 모든 사용자의 플레이리스트 표시 (공용 공간)
+            playlists = playlistRepository.findBySpaceType(spaceType);
+            log.info("[getAllPlaylists] Fetching {} playlists (user-independent), count={}", spaceType, playlists.size());
         } else if (userId != null && spaceType != null) {
-            // GMS/PMS: 특정 사용자의 해당 공간 플레이리스트
+            // GMS, PMS: 특정 사용자의 해당 공간 플레이리스트 (개인 공간)
             playlists = playlistRepository.findByUserUserIdAndSpaceType(userId, spaceType);
             log.info("[getAllPlaylists] Fetching {} playlists for userId={}, count={}", spaceType, userId, playlists.size());
         } else if (userId != null) {
@@ -63,7 +63,7 @@ public class PlaylistServiceImpl implements PlaylistService {
             log.info("[getAllPlaylists] Fetching all playlists for userId={}, count={}", userId, playlists.size());
         } else {
             playlists = new ArrayList<>();
-            log.info("[getAllPlaylists] No userId and not EMS, returning empty");
+            log.info("[getAllPlaylists] No userId and not EMS/GMS, returning empty");
         }
 
         if (status != null) {
@@ -171,7 +171,9 @@ public class PlaylistServiceImpl implements PlaylistService {
         Playlists playlist = playlistRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
         playlist.setSpaceType(spaceType);
-        return Map.of("message", "Playlist moved to " + spaceType, "spaceType", spaceType);
+        playlistRepository.save(playlist);  // 명시적으로 저장
+        log.info("[PlaylistService] Playlist {} moved to {}", id, spaceType);
+        return Map.of("message", "Playlist moved to " + spaceType, "spaceType", spaceType, "playlistId", id);
     }
 
     @Override
@@ -350,5 +352,30 @@ public class PlaylistServiceImpl implements PlaylistService {
         }
 
         return Map.of("message", "Album imported successfully", "playlist", playlistDto, "count", count);
+    }
+
+    @Override
+    public Map<String, Object> searchTracks(String query, int limit) {
+        log.info("[PlaylistService] searchTracks - query={}, limit={}", query, limit);
+        
+        // Search tracks by artist or title
+        List<Tracks> tracks = tracksRepository.findByArtistContainingIgnoreCaseOrTitleContainingIgnoreCase(
+            query, query, org.springframework.data.domain.PageRequest.of(0, limit)
+        );
+        
+        List<Map<String, Object>> trackList = tracks.stream().map(t -> {
+            Map<String, Object> trackMap = new java.util.HashMap<>();
+            trackMap.put("id", t.getTrackId());
+            trackMap.put("title", t.getTitle());
+            trackMap.put("artist", t.getArtist());
+            trackMap.put("album", t.getAlbum());
+            trackMap.put("duration", t.getDuration() != null ? t.getDuration() : 0);
+            trackMap.put("artwork", t.getArtwork());
+            trackMap.put("orderIndex", 0);
+            return trackMap;
+        }).collect(java.util.stream.Collectors.toList());
+        
+        log.info("[PlaylistService] found {} tracks for query '{}'", trackList.size(), query);
+        return Map.of("tracks", trackList);
     }
 }
