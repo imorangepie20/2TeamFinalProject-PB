@@ -43,9 +43,12 @@ public class Users extends BaseEntity {
     @Column(name = "nickname", length = 100, nullable = false)
     private String nickname;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "user_role")
+    @Enumerated(EnumType.STRING)
     private RoleType roleType;
+
+    @Column(name = "user_grade", length = 10)
+    private String grade; // 1, 2, 3, 4, 5
 
     @Column(name = "streaming_services", columnDefinition = "JSON")
     private String streamingServices;

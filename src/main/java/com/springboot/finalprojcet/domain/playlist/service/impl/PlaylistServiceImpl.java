@@ -72,7 +72,8 @@ public class PlaylistServiceImpl implements PlaylistService {
         } else if (userId != null && spaceType != null) {
             // PMS: 특정 사용자의 해당 공간 플레이리스트 (개인 공간)
             playlists = playlistRepository.findByUserUserIdAndSpaceType(userId, spaceType);
-            log.info("[getAllPlaylists] Fetching {} playlists for userId={}, count={}", spaceType, userId, playlists.size());
+            log.info("[getAllPlaylists] Fetching {} playlists for userId={}, count={}", spaceType, userId,
+                    playlists.size());
         } else if (userId != null) {
             // spaceType이 없으면 해당 사용자의 모든 플레이리스트
             playlists = playlistRepository.findByUserUserId(userId);
@@ -148,14 +149,16 @@ public class PlaylistServiceImpl implements PlaylistService {
 
     private Integer fetchDurationFromItunes(String title, String artist) {
         try {
-            if (title == null || artist == null) return null;
+            if (title == null || artist == null)
+                return null;
 
             String searchTerm = (title + " " + artist)
                     .replaceAll("[^a-zA-Z0-9가-힣\\s]", " ")
                     .replaceAll("\\s+", " ")
                     .trim();
 
-            if (searchTerm.length() < 3) return null;
+            if (searchTerm.length() < 3)
+                return null;
 
             String encodedTerm = java.net.URLEncoder.encode(searchTerm, java.nio.charset.StandardCharsets.UTF_8);
             String url = "https://itunes.apple.com/search?term=" + encodedTerm
@@ -253,7 +256,7 @@ public class PlaylistServiceImpl implements PlaylistService {
         Playlists playlist = playlistRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
         playlist.setSpaceType(spaceType);
-        
+
         // 커버 이미지 없으면 앞에서 4개 트랙 artwork로 합성
         if (playlist.getCoverImage() == null || playlist.getCoverImage().isEmpty()) {
             List<PlaylistTracks> tracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(id);
@@ -266,7 +269,7 @@ public class PlaylistServiceImpl implements PlaylistService {
                         artworkUrls.add(artwork);
                     }
                 }
-                
+
                 if (!artworkUrls.isEmpty()) {
                     // 2x2 그리드 이미지 합성
                     String gridImage = imageService.createGridImage(artworkUrls, "playlists");
@@ -281,7 +284,7 @@ public class PlaylistServiceImpl implements PlaylistService {
                 }
             }
         }
-        
+
         playlistRepository.save(playlist);
         log.info("[PlaylistService] Playlist {} moved to {}", id, spaceType);
         return Map.of("message", "Playlist moved to " + spaceType, "spaceType", spaceType, "playlistId", id);
@@ -468,25 +471,39 @@ public class PlaylistServiceImpl implements PlaylistService {
     @Override
     public Map<String, Object> searchTracks(String query, int limit) {
         log.info("[PlaylistService] searchTracks - query={}, limit={}", query, limit);
-        
+
         // Search tracks by artist or title
         List<Tracks> tracks = tracksRepository.findByArtistContainingIgnoreCaseOrTitleContainingIgnoreCase(
-            query, query, org.springframework.data.domain.PageRequest.of(0, limit)
+                query, query, org.springframework.data.domain.PageRequest.of(0, limit * 2) // Fetch more to allow for
+                                                                                           // filtering
         );
-        
-        List<Map<String, Object>> trackList = tracks.stream().map(t -> {
-            Map<String, Object> trackMap = new java.util.HashMap<>();
-            trackMap.put("id", t.getTrackId());
-            trackMap.put("title", t.getTitle());
-            trackMap.put("artist", t.getArtist());
-            trackMap.put("album", t.getAlbum());
-            trackMap.put("duration", t.getDuration() != null ? t.getDuration() : 0);
-            trackMap.put("artwork", t.getArtwork());
-            trackMap.put("orderIndex", 0);
-            return trackMap;
-        }).collect(java.util.stream.Collectors.toList());
-        
-        log.info("[PlaylistService] found {} tracks for query '{}'", trackList.size(), query);
+
+        List<Map<String, Object>> trackList = new ArrayList<>();
+        java.util.Set<String> seenKeys = new java.util.HashSet<>();
+
+        for (Tracks t : tracks) {
+            String key = (t.getTitle() + "|" + t.getArtist()).toLowerCase();
+            if (!seenKeys.contains(key)) {
+                seenKeys.add(key);
+
+                Map<String, Object> trackMap = new java.util.HashMap<>();
+                trackMap.put("id", t.getTrackId());
+                trackMap.put("title", t.getTitle());
+                trackMap.put("artist", t.getArtist());
+                trackMap.put("album", t.getAlbum());
+                trackMap.put("duration", t.getDuration() != null ? t.getDuration() : 0);
+                trackMap.put("artwork", t.getArtwork());
+                trackMap.put("orderIndex", 0);
+                // Also parse externalMetadata if needed, but for simple search this is fine
+
+                trackList.add(trackMap);
+
+                if (trackList.size() >= limit)
+                    break;
+            }
+        }
+
+        log.info("[PlaylistService] found {} unique tracks for query '{}'", trackList.size(), query);
         return Map.of("tracks", trackList);
     }
 }
