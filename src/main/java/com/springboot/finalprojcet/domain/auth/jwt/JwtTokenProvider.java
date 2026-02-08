@@ -41,22 +41,23 @@ public class JwtTokenProvider {
          -> keys.hmacShaKeyFor() -> SecretKey객체 : jjwt 라이브러리가 제공하는 메소드, 바이트 배열을 HMAC-SHA 알고리즘용 SecretKey로 변환
      */
 
-    // access 토큰 생성
-    public String createAccessToken(String email, String role) {
-        return createToken(email, role, jwtProperties.getAccessTokenExpiration());
+// access 토큰 생성
+    public String createAccessToken(String email, Long userId, String role) {
+        return createToken(email, userId, role, jwtProperties.getAccessTokenExpiration());
     }
 
     // refresh 토큰 생성
-    public String createRefreshToken(String email, String role) {
-        return createToken(email, role, jwtProperties.getRefreshTokenExpiration());
+    public String createRefreshToken(String email, Long userId, String role) {
+        return createToken(email, userId, role, jwtProperties.getRefreshTokenExpiration());
     }
 
-    private String createToken(String email, String role, long expiration) {
+    private String createToken(String email, Long userId, String role, long expiration) {
         Date now = new Date();
         Date expriedate = new Date(now.getTime() + expiration); // 현재 시간에 expiration을 더한 값을 저장
 
         return Jwts.builder()
                 .subject(email) // 토큰 주인 이메일로 저장
+                .claim("uid", userId) // userId 저장
                 .claim("role", role) // 권한 저장
                 .issuedAt(now) // 현재 시간 저장
                 .expiration(expriedate) // 토큰 만료 시간 저장
@@ -94,7 +95,7 @@ public class JwtTokenProvider {
         return claims.get("role", String.class);
     }
 
-    // 토큰에서 이메일 추출
+// 토큰에서 이메일 추출
     public String getEmail(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(getSecretKey())
@@ -102,6 +103,16 @@ public class JwtTokenProvider {
                 .parseSignedClaims(token)
                 .getPayload();
         return claims.getSubject();
+    }
+
+    // 토큰에서 userId 추출
+    public Long getUserId(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSecretKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        return claims.get("uid", Long.class);
     }
 
     /*

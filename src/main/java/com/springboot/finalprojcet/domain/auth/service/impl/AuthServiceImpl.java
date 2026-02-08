@@ -44,11 +44,11 @@ public class AuthServiceImpl implements AuthService {
         Users user = userRepository.findByEmail(loginRequestDto.getEmail())
                 .orElseThrow(() -> new RuntimeException("사용자 정보가 존재하지 않습니다."));
 
-        if (!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword()))
+if (!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword()))
             throw new RuntimeException("비밀번호가 일치하지 않습니다.");
 
-        String accessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getRoleType().name());
-        String refreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getRoleType().name());
+        String accessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
+        String refreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
 
         refreshTokenService.saveRefreshToken(user.getEmail(), refreshToken);
 
@@ -82,11 +82,11 @@ public class AuthServiceImpl implements AuthService {
             throw new RuntimeException("Refresh 토큰이 일치하지 않습니다.");
         }
 
-        Users user = userRepository.findByEmail(email)
+Users user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("유저를 찾을 수 없습니다."));
 
-        String newAccessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getRoleType().name());
-        String newRefreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getRoleType().name());
+        String newAccessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
+        String newRefreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
 
         // new Refresh 토큰 redis에 저장
         refreshTokenService.saveRefreshToken(email, newRefreshToken);
@@ -205,9 +205,9 @@ public class AuthServiceImpl implements AuthService {
             }
         }
 
-        // Generate Hash (Immediate Login effect)
-        String accessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getRoleType().name());
-        String refreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getRoleType().name());
+// Generate Hash (Immediate Login effect)
+        String accessToken = jwtTokenProvider.createAccessToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
+        String refreshToken = jwtTokenProvider.createRefreshToken(user.getEmail(), user.getUserId(), user.getRoleType().name());
         refreshTokenService.saveRefreshToken(user.getEmail(), refreshToken);
 
         // Build User Response Object
@@ -220,6 +220,40 @@ public class AuthServiceImpl implements AuthService {
                         : new java.util.ArrayList<>());
         userMap.put("genres",
                 signupRequestDto.getGenres() != null ? signupRequestDto.getGenres() : new java.util.ArrayList<>());
+
+        // FastAPI 사용자 모델 초기화 호출 (Tidal 동기화 완료 후 비동기 실행)
+        // 3초 지연 후 실행하여 Tidal 플레이리스트 DB 저장 완료 보장
+        final Long finalUserId = user.getUserId();
+        final String finalEmail = user.getEmail();
+        try {
+            log.info("[Signup] FastAPI 사용자 모델 초기화 예약: userId={}, email={}", finalUserId, finalEmail);
+            new Thread(() -> {
+                try {
+                    // Tidal 동기화 및 DB 저장 완료 대기
+                    Thread.sleep(3000);
+
+                    org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+                    org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+                    headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+java.util.Map<String, Object> body = new java.util.HashMap<>();
+                    body.put("email", finalEmail);
+                    body.put("userId", finalUserId);
+                    body.put("model", signupRequestDto.getModel() != null ? signupRequestDto.getModel() : "M1");
+
+                    org.springframework.http.HttpEntity<java.util.Map<String, Object>> request = new org.springframework.http.HttpEntity<>(body, headers);
+                    String fastApiUrl = "http://fastapi:8000/api/init-models";
+
+                    log.info("[Signup] FastAPI 사용자 모델 초기화 시작: userId={}", finalUserId);
+                    java.util.Map<String, Object> response = restTemplate.postForObject(fastApiUrl, request, java.util.Map.class);
+                    log.info("[Signup] FastAPI 사용자 모델 초기화 완료: {}", response);
+                } catch (Exception e) {
+                    log.error("[Signup] FastAPI 사용자 모델 초기화 실패: {}", e.getMessage());
+                }
+            }).start();
+        } catch (Exception e) {
+            log.warn("[Signup] FastAPI 사용자 모델 초기화 예약 실패 (회원가입은 성공): {}", e.getMessage());
+        }
 
         return SignupResponseDto.builder()
                 .message("회원가입이 완료되었습니다")

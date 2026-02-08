@@ -65,6 +65,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/youtube/**").permitAll()
                         .requestMatchers("/api/youtube-music/**").permitAll()
                         .requestMatchers("/api/training/**").permitAll()
+                        // Cart API (장바구니 - 분석 요청 포함)
+                        .requestMatchers("/api/cart/**").permitAll()
+                        // Playlists POST (플레이리스트 생성/수정)
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/playlists").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/playlists/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.PATCH, "/api/playlists/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/playlists/**").permitAll()
                         // auth.
                         // auth.
                         // Node.js

@@ -81,4 +81,10 @@ public class EmsController {
         }
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/migrate-tracks")
+    @Operation(summary = "EMS 트랙 메타데이터 마이그레이션", description = "duration, artist, album 정보가 없는 EMS 트랙들을 Tidal API로 업데이트합니다.")
+    public ResponseEntity<Map<String, Object>> migrateTracks() {
+        return ResponseEntity.ok(emsService.migrateEmsTracks());
+    }
 }

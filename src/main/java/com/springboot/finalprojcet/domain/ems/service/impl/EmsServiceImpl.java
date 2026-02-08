@@ -1,8 +1,10 @@
 package com.springboot.finalprojcet.domain.ems.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
 import com.springboot.finalprojcet.domain.ems.service.EmsService;
+import com.springboot.finalprojcet.domain.tidal.config.TidalProperties;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
 import com.springboot.finalprojcet.entity.Playlists;
@@ -10,8 +12,10 @@ import com.springboot.finalprojcet.entity.Tracks;
 import com.springboot.finalprojcet.enums.SpaceType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -25,6 +29,8 @@ public class EmsServiceImpl implements EmsService {
     private final PlaylistTracksRepository playlistTracksRepository;
     private final TracksRepository tracksRepository;
     private final ObjectMapper objectMapper;
+    private final TidalProperties tidalProperties;
+    private final RestTemplate restTemplate;
 
     @Override
     @Transactional(readOnly = true)
@@ -92,32 +98,37 @@ public class EmsServiceImpl implements EmsService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> getRecommendations(Long userId, int limit) {
-        // Mock recommendation logic for now, replicating high-level flow
-        // Ideally should use UserTrackRatings but repository not injected yet.
-        // Assuming random or top rated from general pool for MVP if rating data not
-        // easily accessible via current Repos.
-        // Node.js: Liked artists -> Tracks by this artist. If not enough -> High AI
-        // score tracks.
-
-        // Since we didn't migrate UserTrackRatings repository yet (it wasn't in list),
-        // we can fallback to retrieving recent EMS tracks or random.
-        // *Correction*: UserTrackRatings IS used in Node.js. Check if we have the
-        // entity/repo.
-        // I should have checked entities. Assuming it exists or I'll use placeholders.
-
-        // Placeholder: Return top scored tracks from system.
-        // We lack direct "UserTrackRatingsRepository".
-        // I will implement a basic version returning high AI Score tracks for now.
-
-        List<Tracks> allTracks = tracksRepository.findAll(); // Warning: Heavy. Should Limit.
-        // Actually, let's use a simpler query if possible.
-        // For MVP, just return random subset of all tracks.
+        // Get random tracks for recommendations
+        List<Tracks> allTracks = tracksRepository.findAll();
         Collections.shuffle(allTracks);
 
-        List<Map<String, Object>> recommendations = allTracks.stream()
-                .limit(limit)
+        List<Tracks> selectedTracks = allTracks.stream().limit(limit).collect(Collectors.toList());
+
+        // Fill missing duration for selected tracks (lazy loading)
+        List<Tracks> tracksToUpdate = new ArrayList<>();
+        for (Tracks t : selectedTracks) {
+            if (t.getDuration() == null || t.getDuration() == 0) {
+                Map<String, Object> itunesData = fetchTrackFromItunes(t.getTitle(), t.getArtist());
+                if (itunesData != null && itunesData.containsKey("duration")) {
+                    int duration = ((Number) itunesData.get("duration")).intValue();
+                    if (duration > 0) {
+                        t.setDuration(duration);
+                        tracksToUpdate.add(t);
+                        log.debug("[EMS] Filled duration for '{}' - {}s", t.getTitle(), duration);
+                    }
+                }
+            }
+        }
+
+        // Save updated tracks
+        if (!tracksToUpdate.isEmpty()) {
+            tracksRepository.saveAll(tracksToUpdate);
+            log.info("[EMS] Updated {} tracks with duration info", tracksToUpdate.size());
+        }
+
+        List<Map<String, Object>> recommendations = selectedTracks.stream()
                 .map(t -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("trackId", t.getTrackId());
@@ -126,6 +137,7 @@ public class EmsServiceImpl implements EmsService {
                     m.put("album", t.getAlbum());
                     m.put("duration", t.getDuration());
                     m.put("genre", t.getGenre());
+                    m.put("artwork", t.getArtwork());
                     m.put("recommendReason", "random_discovery");
                     return m;
                 }).collect(Collectors.toList());
@@ -137,7 +149,7 @@ public class EmsServiceImpl implements EmsService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> getSpotifySpecial() {
         // Filter playlists by description "SPOTIFY_SPECIAL"
         List<Playlists> allPlaylists = playlistRepository.findAll();
@@ -197,10 +209,10 @@ public class EmsServiceImpl implements EmsService {
                 .mapToLong(p -> playlistTracksRepository.countByPlaylistPlaylistId(p.getPlaylistId()))
                 .sum();
 
-        // Get Top 10 Tracks from these playlists (Mock logic: just pick first 10
-        // distinct tracks)
+        // Get Top 10 Tracks from these playlists
         List<Map<String, Object>> hotTracks = new ArrayList<>();
         Set<Long> addedTrackIds = new HashSet<>();
+        List<Tracks> tracksToUpdate = new ArrayList<>();
 
         for (Playlists p : specialPlaylists) {
             var tracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(p.getPlaylistId());
@@ -211,30 +223,38 @@ public class EmsServiceImpl implements EmsService {
                 if (addedTrackIds.contains(t.getTrackId()))
                     continue;
 
+                // Fill missing duration (lazy loading)
+                if (t.getDuration() == null || t.getDuration() == 0) {
+                    Map<String, Object> itunesData = fetchTrackFromItunes(t.getTitle(), t.getArtist());
+                    if (itunesData != null && itunesData.containsKey("duration")) {
+                        int duration = ((Number) itunesData.get("duration")).intValue();
+                        if (duration > 0) {
+                            t.setDuration(duration);
+                            tracksToUpdate.add(t);
+                        }
+                    }
+                }
+
                 Map<String, Object> tMap = new HashMap<>();
                 tMap.put("trackId", t.getTrackId());
                 tMap.put("title", t.getTitle());
                 tMap.put("artist", t.getArtist());
-                tMap.put("artwork", t.getAlbum()); // Using album as artwork placeholder or if entity has artwork field
-                // Note: Tracks entity might not have 'artwork' field directly if it relies on
-                // Album.
-                // Checking Tracks entity: It has 'album' (string). It doesn't seem to have
-                // valid artwork URL?
-                // EMS tracks might have valid artwork if imported properly.
-                // Let's assume 'album' holds the artwork URL for imported tracks or use a
-                // placeholder.
-                // Better: Check if Tracks has external image url.
-                // For now, use existing fields.
-
-                // Refined: Check if Tracks has artwork.
-                // If not, use playlist cover.
-                tMap.put("popularity", 50 + (int) (Math.random() * 50)); // Mock popularity
+                tMap.put("album", t.getAlbum());
+                tMap.put("duration", t.getDuration());
+                tMap.put("artwork", t.getArtwork() != null ? t.getArtwork() : p.getCoverImage());
+                tMap.put("popularity", 50 + (int) (Math.random() * 50));
 
                 hotTracks.add(tMap);
                 addedTrackIds.add(t.getTrackId());
             }
             if (hotTracks.size() >= 10)
                 break;
+        }
+
+        // Save updated tracks
+        if (!tracksToUpdate.isEmpty()) {
+            tracksRepository.saveAll(tracksToUpdate);
+            log.info("[EMS] Updated {} hot tracks with duration info", tracksToUpdate.size());
         }
 
         Map<String, Object> stats = new HashMap<>();
@@ -394,5 +414,223 @@ public class EmsServiceImpl implements EmsService {
             csv.append(String.join(",", values)).append("\n");
         }
         return "\uFEFF" + csv.toString();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> migrateEmsTracks() {
+        log.info("[EMS Migration] Starting track metadata migration...");
+
+        // Find all EMS tracks without duration
+        List<Tracks> tracksToMigrate = tracksRepository.findEmsTracksWithoutDuration();
+        log.info("[EMS Migration] Found {} tracks without duration", tracksToMigrate.size());
+
+        int updated = 0;
+        int failed = 0;
+        int skipped = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (Tracks track : tracksToMigrate) {
+            try {
+                // First try Tidal API if tidalId exists
+                String tidalId = extractTidalId(track);
+                Map<String, Object> trackData = null;
+
+                if (tidalId != null && !tidalId.isEmpty()) {
+                    trackData = fetchTrackFromTidal(tidalId);
+                }
+
+                // If no tidalId or Tidal failed, try iTunes search by title+artist
+                if (trackData == null && track.getTitle() != null && track.getArtist() != null) {
+                    trackData = fetchTrackFromItunes(track.getTitle(), track.getArtist());
+                }
+
+                if (trackData != null) {
+                    // Update track metadata
+                    if (trackData.containsKey("duration") && trackData.get("duration") != null) {
+                        int duration = ((Number) trackData.get("duration")).intValue();
+                        if (duration > 0) {
+                            track.setDuration(duration);
+                        }
+                    }
+                    if (trackData.containsKey("artist") && (track.getArtist() == null || "Unknown".equals(track.getArtist()))) {
+                        track.setArtist((String) trackData.get("artist"));
+                    }
+                    if (trackData.containsKey("album") && track.getAlbum() == null) {
+                        track.setAlbum((String) trackData.get("album"));
+                    }
+
+                    if (track.getDuration() != null && track.getDuration() > 0) {
+                        tracksRepository.save(track);
+                        updated++;
+
+                        if (updated % 50 == 0) {
+                            log.info("[EMS Migration] Progress: {} updated, {} failed, {} skipped", updated, failed, skipped);
+                        }
+                    } else {
+                        skipped++;
+                    }
+                } else {
+                    skipped++;
+                }
+
+                // Rate limiting - 500ms between requests (iTunes rate limit is strict)
+                Thread.sleep(500);
+
+            } catch (Exception e) {
+                failed++;
+                if (errors.size() < 10) {
+                    errors.add("Track " + track.getTrackId() + ": " + e.getMessage());
+                }
+            }
+        }
+
+        log.info("[EMS Migration] Complete! Updated: {}, Failed: {}, Skipped: {}", updated, failed, skipped);
+
+        return Map.of(
+                "status", "complete",
+                "total", tracksToMigrate.size(),
+                "updated", updated,
+                "failed", failed,
+                "skipped", skipped,
+                "errors", errors
+        );
+    }
+
+    private String extractTidalId(Tracks track) {
+        try {
+            String metadata = track.getExternalMetadata();
+            if (metadata == null || metadata.isEmpty()) {
+                return null;
+            }
+
+            JsonNode node = objectMapper.readTree(metadata);
+            if (node.has("tidalId")) {
+                return node.get("tidalId").asText();
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> fetchTrackFromTidal(String tidalId) {
+        try {
+            // Use Tidal v1 API (doesn't require user auth for basic track info)
+            String url = tidalProperties.getApiUrl() + "/tracks/" + tidalId + "?countryCode=KR";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Accept", "application/json");
+            headers.set("x-tidal-token", tidalProperties.getClientId());
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = response.getBody();
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("duration", body.path("duration").asInt(0));
+                result.put("isrc", body.path("isrc").asText(null));
+
+                // Artist from nested object
+                if (body.has("artist") && body.path("artist").has("name")) {
+                    result.put("artist", body.path("artist").path("name").asText("Unknown"));
+                } else if (body.has("artists") && body.path("artists").isArray() && body.path("artists").size() > 0) {
+                    result.put("artist", body.path("artists").get(0).path("name").asText("Unknown"));
+                }
+
+                // Album from nested object
+                if (body.has("album") && body.path("album").has("title")) {
+                    result.put("album", body.path("album").path("title").asText(null));
+                }
+
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("[EMS Migration] Failed to fetch track {}: {}", tidalId, e.getMessage());
+        }
+        return null;
+    }
+
+    private Map<String, Object> fetchTrackFromItunes(String title, String artist) {
+        // Retry with exponential backoff
+        int maxRetries = 3;
+        int delay = 500; // Start with 500ms
+
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // Clean up search terms
+                String searchTerm = (title + " " + artist)
+                        .replaceAll("[^a-zA-Z0-9가-힣\\s]", " ")
+                        .replaceAll("\\s+", " ")
+                        .trim();
+
+                if (searchTerm.length() < 3) {
+                    return null;
+                }
+
+                String encodedTerm = java.net.URLEncoder.encode(searchTerm, java.nio.charset.StandardCharsets.UTF_8);
+                String url = "https://itunes.apple.com/search?term=" + encodedTerm
+                        + "&media=music&entity=song&limit=3&country=KR";
+
+                // Use String response and parse manually (iTunes returns text/javascript)
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("Accept", "*/*");
+
+                HttpEntity<Void> entity = new HttpEntity<>(headers);
+                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    JsonNode body = objectMapper.readTree(response.getBody());
+                    JsonNode results = body.path("results");
+
+                    if (results.isArray() && results.size() > 0) {
+                        // Find best match - prefer exact title match
+                        JsonNode bestMatch = null;
+                        for (JsonNode track : results) {
+                            String trackName = track.path("trackName").asText("").toLowerCase();
+                            if (trackName.equals(title.toLowerCase())) {
+                                bestMatch = track;
+                                break;
+                            }
+                            if (bestMatch == null) {
+                                bestMatch = track;
+                            }
+                        }
+
+                        if (bestMatch != null) {
+                            Map<String, Object> result = new HashMap<>();
+                            // iTunes returns duration in milliseconds
+                            int durationMs = bestMatch.path("trackTimeMillis").asInt(0);
+                            result.put("duration", durationMs / 1000); // Convert to seconds
+                            result.put("artist", bestMatch.path("artistName").asText(null));
+                            result.put("album", bestMatch.path("collectionName").asText(null));
+                            return result;
+                        }
+                    }
+                    return null; // Success but no results
+                }
+            } catch (Exception e) {
+                String msg = e.getMessage();
+                if (msg != null && (msg.contains("429") || msg.contains("Too Many Requests"))) {
+                    // Rate limited - wait and retry
+                    try {
+                        Thread.sleep(delay);
+                        delay *= 2; // Exponential backoff
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                } else {
+                    // Other error, don't retry
+                    if (attempt == 0) {
+                        log.debug("[EMS Migration] iTunes search failed for '{}' by '{}': {}", title, artist, msg);
+                    }
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 }

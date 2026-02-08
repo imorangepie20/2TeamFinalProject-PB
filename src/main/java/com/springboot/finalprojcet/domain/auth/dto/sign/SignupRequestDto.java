@@ -25,9 +25,12 @@ public class SignupRequestDto {
     private java.util.List<String> streamingServices;
     private java.util.List<String> genres;
 
-    // Tidal 연동 관련 필드
+// Tidal 연동 관련 필드
     private Boolean tidalConnected;
     private String tidalVisitorId;
     private String tidalAccessToken;
     private String tidalRefreshToken;
+
+    // AI 모델 설정 (M1, M2, M3)
+    private String model;
 }

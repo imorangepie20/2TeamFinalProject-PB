@@ -29,4 +29,6 @@ public interface PlaylistService {
     Map<String, Object> addTrackToPlaylist(Long id, TrackRequestDto track);
 
     void removeTrackFromPlaylist(Long id, Long trackId);
+    
+    Map<String, Object> searchTracks(String query, int limit);
 }

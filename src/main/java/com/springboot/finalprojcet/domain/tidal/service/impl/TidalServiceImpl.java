@@ -368,7 +368,7 @@ public class TidalServiceImpl implements TidalService {
                     .sourceType(SourceType.Platform)
                     .externalId(externalId)
                     .spaceType(SpaceType.PMS)
-                    .statusFlag(StatusFlag.Active)
+                    .statusFlag(StatusFlag.PRP)
                     .build();
 
             playlistRepository.save(newPlaylist);
@@ -452,7 +452,7 @@ public class TidalServiceImpl implements TidalService {
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = Exception.class)
     public TidalSyncResponse syncTidal(Long userId, TidalSyncRequest request) {
         if (request.getTidalAuthData() == null || request.getTidalAuthData().getAccessToken() == null) {
             log.error("[Sync] Missing Tidal auth data. Request: {}", request);
@@ -477,17 +477,19 @@ public class TidalServiceImpl implements TidalService {
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
             int syncedCount = 0;
+            int failedCount = 0;
+            
             for (JsonNode p : playlists) {
+                String playlistUuid = p.path("uuid").asText();
+                String externalId = "tidal:" + playlistUuid;
+
+                // Skip if already imported
+                if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
+                    log.info("[Sync] Skipping already imported playlist: {}", playlistUuid);
+                    continue;
+                }
+
                 try {
-                    String playlistUuid = p.path("uuid").asText();
-                    String externalId = "tidal:" + playlistUuid;
-
-                    // Skip if already imported
-                    if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
-                        log.info("[Sync] Skipping already imported playlist: {}", playlistUuid);
-                        continue;
-                    }
-
                     // Fetch individual playlist info to get cover image from included array
                     String coverImage = null;
                     try {
@@ -519,7 +521,7 @@ public class TidalServiceImpl implements TidalService {
                             .title(p.path("title").asText())
                             .description(p.path("description").asText("Tidal Playlist"))
                             .spaceType(SpaceType.PMS)
-                            .statusFlag(StatusFlag.Active)
+                            .statusFlag(StatusFlag.PRP)
                             .sourceType(SourceType.Platform)
                             .externalId(externalId)
                             .coverImage(coverImage)
@@ -529,6 +531,8 @@ public class TidalServiceImpl implements TidalService {
 
                     // Fetch and save tracks
                     List<JsonNode> tracks = fetchPlaylistTracks(token, p.path("uuid").asText(), "KR");
+                    int tracksSaved = 0;
+                    
                     for (int i = 0; i < tracks.size(); i++) {
                         JsonNode item = tracks.get(i);
                         JsonNode track = item.has("item") ? item.path("item") : item;
@@ -573,17 +577,33 @@ public class TidalServiceImpl implements TidalService {
                                     .orderIndex(i)
                                     .build();
                             playlistTracksRepository.save(pt);
+                            tracksSaved++;
                         } catch (Exception e) {
-                            log.error("[Sync] Track insert failed: {}", e.getMessage());
+                            log.warn("[Sync] Track insert failed (continuing): {}", e.getMessage());
+                            // Continue with next track instead of failing entire sync
                         }
                     }
+                    
+                    log.info("[Sync] Playlist '{}' synced with {}/{} tracks", 
+                            p.path("title").asText(), tracksSaved, tracks.size());
                     syncedCount++;
                 } catch (Exception e) {
-                    log.error("[Sync] Playlist insert failed: {}", e.getMessage());
+                    log.error("[Sync] Playlist insert failed (continuing): {} - {}", playlistUuid, e.getMessage());
+                    failedCount++;
+                    // Continue with next playlist instead of failing entire sync
                 }
             }
 
-            return TidalSyncResponse.builder().success(true).syncedCount(syncedCount).build();
+            String message = String.format("%d개 플레이리스트 동기화 완료", syncedCount);
+            if (failedCount > 0) {
+                message += String.format(" (%d개 실패)", failedCount);
+            }
+            
+            return TidalSyncResponse.builder()
+                    .success(true)
+                    .syncedCount(syncedCount)
+                    .message(message)
+                    .build();
         } catch (Exception e) {
             log.error("Tidal Sync Error", e);
             return TidalSyncResponse.builder().success(false).error("동기화 중 오류가 발생했습니다: " + e.getMessage()).build();
@@ -1606,6 +1626,21 @@ public class TidalServiceImpl implements TidalService {
                 JsonNode body = response.getBody();
 
                 // v2 returns tracks in "included" array
+                // First, build a map of artists by id for cross-referencing
+                Map<String, String> artistMap = new HashMap<>();
+                Map<String, JsonNode> albumMap = new HashMap<>();
+                if (body.has("included") && body.path("included").isArray()) {
+                    for (JsonNode inc : body.path("included")) {
+                        String type = inc.path("type").asText();
+                        String id = inc.path("id").asText();
+                        if ("artists".equals(type) && inc.has("attributes")) {
+                            artistMap.put(id, inc.path("attributes").path("name").asText("Unknown"));
+                        } else if ("albums".equals(type)) {
+                            albumMap.put(id, inc);
+                        }
+                    }
+                }
+
                 if (body.has("included") && body.path("included").isArray()) {
                     for (JsonNode inc : body.path("included")) {
                         if ("tracks".equals(inc.path("type").asText())) {
@@ -1619,6 +1654,40 @@ public class TidalServiceImpl implements TidalService {
                                 track.put("trackNumber", attrs.path("trackNumber").asInt(0));
                                 track.put("isrc", attrs.path("isrc").asText(""));
                             }
+
+                            // Extract artist from relationships
+                            String artistName = "Unknown";
+                            if (inc.has("relationships") && inc.path("relationships").has("artists")) {
+                                JsonNode artistsData = inc.path("relationships").path("artists").path("data");
+                                if (artistsData.isArray() && artistsData.size() > 0) {
+                                    String artistId = artistsData.get(0).path("id").asText();
+                                    artistName = artistMap.getOrDefault(artistId, "Unknown");
+                                }
+                            }
+                            ObjectNode artistNode = objectMapper.createObjectNode();
+                            artistNode.put("name", artistName);
+                            track.set("artist", artistNode);
+
+                            // Extract album from relationships
+                            String albumTitle = "Unknown";
+                            String albumCover = null;
+                            if (inc.has("relationships") && inc.path("relationships").has("albums")) {
+                                JsonNode albumsData = inc.path("relationships").path("albums").path("data");
+                                if (albumsData.isArray() && albumsData.size() > 0) {
+                                    String albumId = albumsData.get(0).path("id").asText();
+                                    JsonNode albumNode = albumMap.get(albumId);
+                                    if (albumNode != null && albumNode.has("attributes")) {
+                                        albumTitle = albumNode.path("attributes").path("title").asText("Unknown");
+                                        albumCover = albumNode.path("attributes").path("imageCover").path(0).path("url").asText(null);
+                                    }
+                                }
+                            }
+                            ObjectNode albumNode = objectMapper.createObjectNode();
+                            albumNode.put("title", albumTitle);
+                            if (albumCover != null) {
+                                albumNode.put("cover", albumCover);
+                            }
+                            track.set("album", albumNode);
 
                             // Wrap in item format for compatibility
                             ObjectNode item = objectMapper.createObjectNode();

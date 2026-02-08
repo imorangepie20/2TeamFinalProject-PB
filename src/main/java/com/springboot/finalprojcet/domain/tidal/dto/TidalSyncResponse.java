@@ -12,5 +12,6 @@ import lombok.NoArgsConstructor;
 public class TidalSyncResponse {
     private boolean success;
     private Integer syncedCount;
+    private String message;
     private String error;
 }

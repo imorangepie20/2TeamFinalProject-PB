@@ -144,4 +144,13 @@ public class PlaylistController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity.ok(playlistService.importAlbum(userDetails.getUser().getUserId(), body));
     }
+
+    @GetMapping("/tracks/search")
+    @Operation(summary = "트랙 검색", description = "아티스트/제목으로 트랙을 검색합니다.")
+    public ResponseEntity<Map<String, Object>> searchTracks(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "20") int limit) {
+        log.info("[PlaylistController] searchTracks - query={}, limit={}", q, limit);
+        return ResponseEntity.ok(playlistService.searchTracks(q, limit));
+    }
 }

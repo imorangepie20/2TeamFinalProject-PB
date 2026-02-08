@@ -1,5 +1,6 @@
 package com.springboot.finalprojcet.domain.playlist.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springboot.finalprojcet.domain.common.service.ImageService;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
@@ -20,8 +21,11 @@ import com.springboot.finalprojcet.enums.SpaceType;
 import com.springboot.finalprojcet.enums.StatusFlag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.*;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,20 +45,32 @@ public class PlaylistServiceImpl implements PlaylistService {
     private final UserRepository userRepository;
     private final ImageService imageService;
     private final ObjectMapper objectMapper;
+    private final RestTemplate restTemplate;
 
     @Override
     @Transactional(readOnly = true)
     public Map<String, Object> getAllPlaylists(SpaceType spaceType, StatusFlag status, Long userId) {
         List<Playlists> playlists;
 
-        // EMS는 사용자 독립적 (공용 공간)
-        // GMS, PMS는 사용자별 필터링 (개인 공간)
+        // EMS: 공용 공간 (모든 사용자 조회 가능)
+        // GMS: 회원은 본인 것만, 비회원은 전체 (메인 미리보기용)
+        // PMS: 개인 공간 (본인만)
         if (spaceType == SpaceType.EMS) {
             // EMS: 모든 사용자의 플레이리스트 표시 (공용 공간)
             playlists = playlistRepository.findBySpaceType(spaceType);
-            log.info("[getAllPlaylists] Fetching {} playlists (user-independent), count={}", spaceType, playlists.size());
+            log.info("[getAllPlaylists] Fetching EMS playlists (public), count={}", playlists.size());
+        } else if (spaceType == SpaceType.GMS) {
+            if (userId != null) {
+                // 회원: 본인 GMS만
+                playlists = playlistRepository.findByUserUserIdAndSpaceType(userId, spaceType);
+                log.info("[getAllPlaylists] Fetching GMS for userId={}, count={}", userId, playlists.size());
+            } else {
+                // 비회원: 전체 GMS (메인 미리보기용)
+                playlists = playlistRepository.findBySpaceType(spaceType);
+                log.info("[getAllPlaylists] Fetching all GMS for non-member preview, count={}", playlists.size());
+            }
         } else if (userId != null && spaceType != null) {
-            // GMS, PMS: 특정 사용자의 해당 공간 플레이리스트 (개인 공간)
+            // PMS: 특정 사용자의 해당 공간 플레이리스트 (개인 공간)
             playlists = playlistRepository.findByUserUserIdAndSpaceType(userId, spaceType);
             log.info("[getAllPlaylists] Fetching {} playlists for userId={}, count={}", spaceType, userId, playlists.size());
         } else if (userId != null) {
@@ -79,7 +95,7 @@ public class PlaylistServiceImpl implements PlaylistService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public PlaylistResponseDto getPlaylistById(Long id) {
         Playlists playlist = playlistRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
@@ -88,6 +104,27 @@ public class PlaylistServiceImpl implements PlaylistService {
 
         // Fetch tracks
         List<PlaylistTracks> playlistTracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(id);
+
+        // Fill missing duration for tracks (lazy loading)
+        List<Tracks> tracksToUpdate = new ArrayList<>();
+        for (PlaylistTracks pt : playlistTracks) {
+            Tracks t = pt.getTrack();
+            if (t.getDuration() == null || t.getDuration() == 0) {
+                Integer duration = fetchDurationFromItunes(t.getTitle(), t.getArtist());
+                if (duration != null && duration > 0) {
+                    t.setDuration(duration);
+                    tracksToUpdate.add(t);
+                    log.info("[PlaylistService] Filled duration for '{}' - {}s", t.getTitle(), duration);
+                }
+            }
+        }
+
+        // Save updated tracks
+        if (!tracksToUpdate.isEmpty()) {
+            tracksRepository.saveAll(tracksToUpdate);
+            log.info("[PlaylistService] Updated {} tracks with duration info", tracksToUpdate.size());
+        }
+
         List<TrackResponseDto> trackDtos = playlistTracks.stream().map(pt -> {
             Tracks t = pt.getTrack();
             return TrackResponseDto.builder()
@@ -107,6 +144,51 @@ public class PlaylistServiceImpl implements PlaylistService {
         dto.setTracks(trackDtos);
 
         return dto;
+    }
+
+    private Integer fetchDurationFromItunes(String title, String artist) {
+        try {
+            if (title == null || artist == null) return null;
+
+            String searchTerm = (title + " " + artist)
+                    .replaceAll("[^a-zA-Z0-9가-힣\\s]", " ")
+                    .replaceAll("\\s+", " ")
+                    .trim();
+
+            if (searchTerm.length() < 3) return null;
+
+            String encodedTerm = java.net.URLEncoder.encode(searchTerm, java.nio.charset.StandardCharsets.UTF_8);
+            String url = "https://itunes.apple.com/search?term=" + encodedTerm
+                    + "&media=music&entity=song&limit=3&country=KR";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Accept", "*/*");
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = objectMapper.readTree(response.getBody());
+                JsonNode results = body.path("results");
+
+                if (results.isArray() && results.size() > 0) {
+                    // Find best match
+                    for (JsonNode track : results) {
+                        String trackName = track.path("trackName").asText("").toLowerCase();
+                        if (trackName.equals(title.toLowerCase())) {
+                            int durationMs = track.path("trackTimeMillis").asInt(0);
+                            return durationMs / 1000;
+                        }
+                    }
+                    // No exact match, use first result
+                    int durationMs = results.get(0).path("trackTimeMillis").asInt(0);
+                    return durationMs / 1000;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[PlaylistService] iTunes lookup failed for '{}': {}", title, e.getMessage());
+        }
+        return null;
     }
 
     @Override
@@ -171,7 +253,36 @@ public class PlaylistServiceImpl implements PlaylistService {
         Playlists playlist = playlistRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
         playlist.setSpaceType(spaceType);
-        playlistRepository.save(playlist);  // 명시적으로 저장
+        
+        // 커버 이미지 없으면 앞에서 4개 트랙 artwork로 합성
+        if (playlist.getCoverImage() == null || playlist.getCoverImage().isEmpty()) {
+            List<PlaylistTracks> tracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(id);
+            if (!tracks.isEmpty()) {
+                // 앞에서 4개 트랙의 artwork 수집
+                List<String> artworkUrls = new ArrayList<>();
+                for (int i = 0; i < Math.min(4, tracks.size()); i++) {
+                    String artwork = tracks.get(i).getTrack().getArtwork();
+                    if (artwork != null && !artwork.isEmpty()) {
+                        artworkUrls.add(artwork);
+                    }
+                }
+                
+                if (!artworkUrls.isEmpty()) {
+                    // 2x2 그리드 이미지 합성
+                    String gridImage = imageService.createGridImage(artworkUrls, "playlists");
+                    if (gridImage != null) {
+                        playlist.setCoverImage(gridImage);
+                        log.info("[PlaylistService] Created grid cover image: {}", gridImage);
+                    } else if (!artworkUrls.isEmpty()) {
+                        // 합성 실패시 첫 번째 이미지 사용
+                        playlist.setCoverImage(artworkUrls.get(0));
+                        log.info("[PlaylistService] Fallback to first track artwork: {}", artworkUrls.get(0));
+                    }
+                }
+            }
+        }
+        
+        playlistRepository.save(playlist);
         log.info("[PlaylistService] Playlist {} moved to {}", id, spaceType);
         return Map.of("message", "Playlist moved to " + spaceType, "spaceType", spaceType, "playlistId", id);
     }

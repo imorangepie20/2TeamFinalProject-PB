@@ -85,6 +85,10 @@ tidal:
   api-url: https://api.tidal.com/v1
   redirect-uri: ${TIDAL_REDIRECT_URI:http://localhost/tidal-callback}
 
+# FastAPI AI Server Configuration
+fastapi:
+  url: ${FASTAPI_URL:http://fastapi:8000}
+
 # Spotify API Configuration
 spotify:
   client-id: ${SPOTIFY_CLIENT_ID:}

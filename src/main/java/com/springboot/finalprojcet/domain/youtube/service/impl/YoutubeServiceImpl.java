@@ -480,7 +480,7 @@ public class YoutubeServiceImpl implements YoutubeService {
         // Using externalId to store youtube ID
         playlist.setExternalId("youtube:" + playlistId);
         playlist.setSpaceType(SpaceType.PMS);
-        playlist.setStatusFlag(StatusFlag.Active); // Active
+        playlist.setStatusFlag(StatusFlag.PTP); // DB enum: PTP, PRP, PFP
 
         playlist = playlistRepository.save(playlist);
 

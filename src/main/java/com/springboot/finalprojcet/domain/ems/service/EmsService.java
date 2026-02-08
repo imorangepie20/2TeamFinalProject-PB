@@ -14,4 +14,7 @@ public interface EmsService {
     Object exportPlaylist(Long playlistId, String format);
 
     Map<String, Object> getPlaylistLinks(Long userId);
+
+    // Migration: Update EMS tracks without duration using Tidal API
+    Map<String, Object> migrateEmsTracks();
 }
