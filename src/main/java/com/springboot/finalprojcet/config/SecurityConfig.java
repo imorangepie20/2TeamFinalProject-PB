@@ -59,6 +59,8 @@ public class SecurityConfig {
                         // PMS & EMS
                         .requestMatchers("/api/pms/**").permitAll()
                         .requestMatchers("/api/ems/**").permitAll()
+                        // LLM (Deep Dive)
+                        .requestMatchers("/api/llm/**").permitAll()
                         // External (iTunes, Spotify)
                         .requestMatchers("/api/itunes/**").permitAll()
                         .requestMatchers("/api/spotify/**").permitAll()
