@@ -67,7 +67,8 @@ public class AuthController {
                 "user", java.util.Map.of(
                         "id", user.getUserId(),
                         "email", user.getEmail(),
-                        "name", user.getNickname())));
+                        "name", user.getNickname(),
+                        "role", user.getRoleType() != null ? user.getRoleType().name() : "USER")));
     }
 
     @PostMapping("/sync/tidal")

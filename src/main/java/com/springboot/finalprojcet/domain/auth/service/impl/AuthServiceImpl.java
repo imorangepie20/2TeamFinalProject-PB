@@ -58,7 +58,8 @@ if (!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword()))
                 .user(java.util.Map.of(
                         "id", user.getUserId(),
                         "email", user.getEmail(),
-                        "name", user.getNickname()))
+                        "name", user.getNickname(),
+                        "role", user.getRoleType() != null ? user.getRoleType().name() : "USER"))
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .build();
