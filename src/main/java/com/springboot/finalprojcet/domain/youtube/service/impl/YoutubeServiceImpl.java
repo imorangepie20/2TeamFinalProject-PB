@@ -2,6 +2,7 @@ package com.springboot.finalprojcet.domain.youtube.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
+import com.springboot.finalprojcet.domain.playlist.repository.UserDismissedPlaylistRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
 import com.springboot.finalprojcet.domain.youtube.service.YoutubeService;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 public class YoutubeServiceImpl implements YoutubeService {
 
     private final PlaylistRepository playlistRepository;
+    private final UserDismissedPlaylistRepository dismissedPlaylistRepository;
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
     private final ObjectMapper objectMapper;
@@ -411,7 +413,8 @@ public class YoutubeServiceImpl implements YoutubeService {
     public Map<String, Object> importPlaylist(String visitorId, String playlistId, Long userId) {
         // 중복 체크: 이미 가져온 플레이리스트인지 확인
         String externalId = "youtube:" + playlistId;
-        if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
+        if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)
+                || dismissedPlaylistRepository.existsByUserUserIdAndExternalId(userId, externalId)) {
             return Map.of(
                     "success", true,
                     "message", "Already imported",

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springboot.finalprojcet.domain.common.service.ImageService;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
+import com.springboot.finalprojcet.domain.playlist.repository.UserDismissedPlaylistRepository;
 import com.springboot.finalprojcet.domain.spotify.service.SpotifyService;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
 public class SpotifyServiceImpl implements SpotifyService {
 
     private final PlaylistRepository playlistRepository;
+    private final UserDismissedPlaylistRepository dismissedPlaylistRepository;
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
     private final ImageService imageService;
@@ -319,6 +321,19 @@ public class SpotifyServiceImpl implements SpotifyService {
     @Override
     @Transactional
     public Map<String, Object> importPlaylist(String visitorId, String playlistId, Long userId) {
+        // 중복 체크: 이미 가져온 플레이리스트이거나 사용자가 삭제한 것인지 확인
+        String externalId = "spotify:" + playlistId;
+        if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)
+                || dismissedPlaylistRepository.existsByUserUserIdAndExternalId(userId, externalId)) {
+            return Map.of(
+                    "success", true,
+                    "message", "Already imported",
+                    "playlistId", 0,
+                    "title", "",
+                    "importedTracks", 0,
+                    "totalTracks", 0);
+        }
+
         String accessToken = getValidAccessToken(visitorId);
 
         // 1. Fetch Playlist Info

@@ -8,6 +8,7 @@ import com.springboot.finalprojcet.domain.playlist.dto.PlaylistRequestDto;
 import com.springboot.finalprojcet.domain.playlist.dto.PlaylistResponseDto;
 import com.springboot.finalprojcet.domain.playlist.dto.TrackRequestDto;
 import com.springboot.finalprojcet.domain.playlist.dto.TrackResponseDto;
+import com.springboot.finalprojcet.domain.playlist.repository.UserDismissedPlaylistRepository;
 import com.springboot.finalprojcet.domain.playlist.service.PlaylistService;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
 import com.springboot.finalprojcet.domain.tidal.repository.TracksRepository;
@@ -15,6 +16,7 @@ import com.springboot.finalprojcet.domain.user.repository.UserRepository;
 import com.springboot.finalprojcet.entity.PlaylistTracks;
 import com.springboot.finalprojcet.entity.Playlists;
 import com.springboot.finalprojcet.entity.Tracks;
+import com.springboot.finalprojcet.entity.UserDismissedPlaylist;
 import com.springboot.finalprojcet.entity.Users;
 import com.springboot.finalprojcet.enums.SourceType;
 import com.springboot.finalprojcet.enums.SpaceType;
@@ -43,6 +45,7 @@ public class PlaylistServiceImpl implements PlaylistService {
     private final PlaylistTracksRepository playlistTracksRepository;
     private final TracksRepository tracksRepository;
     private final UserRepository userRepository;
+    private final UserDismissedPlaylistRepository dismissedPlaylistRepository;
     private final ImageService imageService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
@@ -292,10 +295,21 @@ public class PlaylistServiceImpl implements PlaylistService {
 
     @Override
     @Transactional
-    public void deletePlaylist(Long id) {
-        if (!playlistRepository.existsById(id)) {
-            throw new RuntimeException("Playlist not found");
+    public void deletePlaylist(Long id, Long userId) {
+        Playlists playlist = playlistRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Playlist not found"));
+
+        // 외부 플랫폼에서 가져온 재생목록이면 dismissed 테이블에 기록 (재import 방지)
+        if (playlist.getExternalId() != null && userId != null) {
+            if (!dismissedPlaylistRepository.existsByUserUserIdAndExternalId(userId, playlist.getExternalId())) {
+                dismissedPlaylistRepository.save(UserDismissedPlaylist.builder()
+                        .user(playlist.getUser())
+                        .externalId(playlist.getExternalId())
+                        .dismissedAt(LocalDateTime.now())
+                        .build());
+            }
         }
+
         playlistRepository.deleteById(id);
     }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.springboot.finalprojcet.domain.common.service.ImageService;
 import com.springboot.finalprojcet.domain.gms.repository.PlaylistRepository;
+import com.springboot.finalprojcet.domain.playlist.repository.UserDismissedPlaylistRepository;
 import com.springboot.finalprojcet.domain.tidal.config.TidalProperties;
 import com.springboot.finalprojcet.domain.tidal.dto.*;
 import com.springboot.finalprojcet.domain.tidal.repository.PlaylistTracksRepository;
@@ -44,6 +45,7 @@ public class TidalServiceImpl implements TidalService {
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final PlaylistRepository playlistRepository;
+    private final UserDismissedPlaylistRepository dismissedPlaylistRepository;
     private final TracksRepository tracksRepository;
     private final PlaylistTracksRepository playlistTracksRepository;
     private final TidalTokenStore tokenStore;
@@ -302,10 +304,11 @@ public class TidalServiceImpl implements TidalService {
         }
 
         try {
-            // Check for duplicate import
+            // Check for duplicate import (including dismissed playlists)
             String externalId = "tidal:" + request.getPlaylistId();
-            if (playlistRepository.existsByExternalIdAndUserUserId(externalId, request.getUserId())) {
-                log.info("[Tidal] Playlist already imported: {}", request.getPlaylistId());
+            if (playlistRepository.existsByExternalIdAndUserUserId(externalId, request.getUserId())
+                    || dismissedPlaylistRepository.existsByUserUserIdAndExternalId(request.getUserId(), externalId)) {
+                log.info("[Tidal] Playlist already imported or dismissed: {}", request.getPlaylistId());
                 return TidalImportResponse.builder()
                         .success(true)
                         .message("Already imported")
@@ -483,9 +486,10 @@ public class TidalServiceImpl implements TidalService {
                 String playlistUuid = p.path("uuid").asText();
                 String externalId = "tidal:" + playlistUuid;
 
-                // Skip if already imported
-                if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)) {
-                    log.info("[Sync] Skipping already imported playlist: {}", playlistUuid);
+                // Skip if already imported or dismissed
+                if (playlistRepository.existsByExternalIdAndUserUserId(externalId, userId)
+                        || dismissedPlaylistRepository.existsByUserUserIdAndExternalId(userId, externalId)) {
+                    log.info("[Sync] Skipping already imported/dismissed playlist: {}", playlistUuid);
                     continue;
                 }
 

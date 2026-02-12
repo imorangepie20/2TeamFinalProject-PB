@@ -45,6 +45,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/tidal/auth/device").permitAll()
                         .requestMatchers("/api/tidal/auth/token").permitAll()
                         .requestMatchers("/api/tidal/auth/token").permitAll()
+                        // Settings (테마 등 전역 설정 - GET만 공개)
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/settings/theme").permitAll()
                         // Playlists
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/playlists").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/playlists/**").permitAll()

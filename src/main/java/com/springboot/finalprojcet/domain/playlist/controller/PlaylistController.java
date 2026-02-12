@@ -85,8 +85,11 @@ public class PlaylistController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "플레이리스트 삭제", description = "플레이리스트를 삭제합니다.")
-    public ResponseEntity<Void> deletePlaylist(@PathVariable Long id) {
-        playlistService.deletePlaylist(id);
+    public ResponseEntity<Void> deletePlaylist(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Long userId = userDetails != null ? userDetails.getUser().getUserId() : null;
+        playlistService.deletePlaylist(id, userId);
         return ResponseEntity.ok().build();
     }
 
