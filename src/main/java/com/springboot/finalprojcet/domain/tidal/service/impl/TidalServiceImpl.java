@@ -18,6 +18,7 @@ import com.springboot.finalprojcet.entity.Playlists;
 import com.springboot.finalprojcet.entity.Tracks;
 import com.springboot.finalprojcet.entity.Users;
 import com.springboot.finalprojcet.enums.SourceType;
+import java.time.Duration;
 import com.springboot.finalprojcet.enums.SpaceType;
 import com.springboot.finalprojcet.enums.StatusFlag;
 import lombok.RequiredArgsConstructor;
@@ -389,6 +390,14 @@ public class TidalServiceImpl implements TidalService {
                     String tidalId = track.path("id").asText();
                     String artist = track.path("artist").path("name").asText(
                             track.path("artists").path(0).path("name").asText("Unknown"));
+                    // fallback: artist가 Unknown이면 v1 API로 개별 조회
+                    if ("Unknown".equals(artist) && tidalId != null && !tidalId.isEmpty()) {
+                        String resolved = fetchArtistFromTidalV1(tokenInfo.accessToken, tidalId, countryCode);
+                        if (resolved != null) {
+                            artist = resolved;
+                            log.info("[Tidal] Resolved artist for '{}': {}", track.path("title").asText(), artist);
+                        }
+                    }
                     String albumCover = track.path("album").path("cover").asText(null);
                     String artwork = null;
                     if (albumCover != null && !albumCover.isEmpty()) {
@@ -563,10 +572,23 @@ public class TidalServiceImpl implements TidalService {
                                 }
                             }
 
+                            String syncArtist = track.path("artist").path("name").asText(
+                                    track.path("artists").path(0).path("name").asText("Unknown"));
+                            // fallback: artist가 Unknown이면 v1 API로 개별 조회
+                            if ("Unknown".equals(syncArtist)) {
+                                String tidalTrackId = track.path("id").asText();
+                                if (tidalTrackId != null && !tidalTrackId.isEmpty()) {
+                                    String resolved = fetchArtistFromTidalV1(token, tidalTrackId, "KR");
+                                    if (resolved != null) {
+                                        syncArtist = resolved;
+                                        log.info("[Sync] Resolved artist for '{}': {}", track.path("title").asText(), syncArtist);
+                                    }
+                                }
+                            }
+
                             Tracks trackEntity = Tracks.builder()
                                     .title(track.path("title").asText(track.path("name").asText()))
-                                    .artist(track.path("artist").path("name").asText(
-                                            track.path("artists").path(0).path("name").asText("Unknown")))
+                                    .artist(syncArtist)
                                     .album(track.path("album").path("title").asText("Unknown"))
                                     .duration(track.path("duration").asInt(0))
                                     .externalMetadata(objectMapper.writeValueAsString(metadata))
@@ -1622,7 +1644,7 @@ public class TidalServiceImpl implements TidalService {
             headers.set("Client-Id", tidalProperties.getClientId());
 
             String url = "https://openapi.tidal.com/v2/playlists/" + playlistId + "/relationships/items?countryCode="
-                    + countryCode + "&include=items";
+                    + countryCode + "&include=items,items.artists,items.albums";
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
 
@@ -1654,7 +1676,17 @@ public class TidalServiceImpl implements TidalService {
                             if (inc.has("attributes")) {
                                 JsonNode attrs = inc.path("attributes");
                                 track.put("title", attrs.path("title").asText(""));
-                                track.put("duration", attrs.path("duration").asInt(0));
+                                // v2 API returns ISO 8601 duration (e.g. "PT2M58S")
+                                String durationStr = attrs.path("duration").asText("");
+                                int durationSec = 0;
+                                if (!durationStr.isEmpty()) {
+                                    try {
+                                        durationSec = (int) Duration.parse(durationStr).getSeconds();
+                                    } catch (Exception e) {
+                                        durationSec = attrs.path("duration").asInt(0);
+                                    }
+                                }
+                                track.put("duration", durationSec);
                                 track.put("trackNumber", attrs.path("trackNumber").asInt(0));
                                 track.put("isrc", attrs.path("isrc").asText(""));
                             }
@@ -1762,6 +1794,41 @@ public class TidalServiceImpl implements TidalService {
         log.info("[Tidal] Total tracks fetched: {}", allItems.size());
         return allItems;
     }
+
+    /**
+     * artist가 "Unknown"일 때 Tidal v1 API로 개별 트랙 조회하여 artist명 보정
+     */
+    private String fetchArtistFromTidalV1(String token, String tidalId, String countryCode) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.set("Accept", "application/json");
+
+            String url = tidalProperties.getApiUrl() + "/tracks/" + tidalId
+                    + "?countryCode=" + (countryCode != null ? countryCode : "KR");
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(url, HttpMethod.GET, entity, JsonNode.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode body = response.getBody();
+                String artist = body.path("artist").path("name").asText(null);
+                if (artist != null && !artist.isEmpty() && !"Unknown".equals(artist)) {
+                    return artist;
+                }
+                // artists 배열 fallback
+                if (body.has("artists") && body.path("artists").isArray() && body.path("artists").size() > 0) {
+                    artist = body.path("artists").get(0).path("name").asText(null);
+                    if (artist != null && !artist.isEmpty() && !"Unknown".equals(artist)) {
+                        return artist;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[Tidal] v1 track lookup failed for {}: {}", tidalId, e.getMessage());
+        }
+        return null;
+    }
+
     // --- Featured Playlists ---
 
     @Override

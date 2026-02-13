@@ -99,35 +99,15 @@ public class PlaylistServiceImpl implements PlaylistService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public PlaylistResponseDto getPlaylistById(Long id) {
         Playlists playlist = playlistRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
 
         PlaylistResponseDto dto = convertToDto(playlist);
 
-        // Fetch tracks
-        List<PlaylistTracks> playlistTracks = playlistTracksRepository.findAllByPlaylistPlaylistIdOrderByOrderIndex(id);
-
-        // Fill missing duration for tracks (lazy loading)
-        List<Tracks> tracksToUpdate = new ArrayList<>();
-        for (PlaylistTracks pt : playlistTracks) {
-            Tracks t = pt.getTrack();
-            if (t.getDuration() == null || t.getDuration() == 0) {
-                Integer duration = fetchDurationFromItunes(t.getTitle(), t.getArtist());
-                if (duration != null && duration > 0) {
-                    t.setDuration(duration);
-                    tracksToUpdate.add(t);
-                    log.info("[PlaylistService] Filled duration for '{}' - {}s", t.getTitle(), duration);
-                }
-            }
-        }
-
-        // Save updated tracks
-        if (!tracksToUpdate.isEmpty()) {
-            tracksRepository.saveAll(tracksToUpdate);
-            log.info("[PlaylistService] Updated {} tracks with duration info", tracksToUpdate.size());
-        }
+        // JOIN FETCH로 트랙을 한번에 로드 (N+1 방지)
+        List<PlaylistTracks> playlistTracks = playlistTracksRepository.findAllWithTrackByPlaylistId(id);
 
         List<TrackResponseDto> trackDtos = playlistTracks.stream().map(pt -> {
             Tracks t = pt.getTrack();
@@ -144,7 +124,6 @@ public class PlaylistServiceImpl implements PlaylistService {
                     .build();
         }).collect(Collectors.toList());
 
-        // Populate tracks in DTO
         dto.setTracks(trackDtos);
 
         return dto;
