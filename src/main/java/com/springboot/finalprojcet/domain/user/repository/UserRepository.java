@@ -1,6 +1,8 @@
 package com.springboot.finalprojcet.domain.user.repository;
 
 import com.springboot.finalprojcet.entity.Users;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
@@ -8,4 +10,5 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<Users, Long> {
     Optional<Users> findByEmail(String email);
     boolean existsByEmail(String email);
+    Page<Users> findByNicknameContainingOrEmailContaining(String nickname, String email, Pageable pageable);
 }
